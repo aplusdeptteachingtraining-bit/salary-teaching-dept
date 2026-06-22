@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>部門薪資彙整工具</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#ffffff; --bg2:#f5f4f0; --bg3:#ececea;
+    --text:#1f1f1d; --text2:#5f5e5a; --text3:#888780;
+    --border:#d3d1c7; --border2:#b4b2a9;
+    --accent:#185fa5; --accent-bg:#e6f1fb; --accent-text:#0c447c;
+    --good:#3b6d11; --good-bg:#eaf3de; --good-text:#27500a;
+    --bad:#a32d2d; --bad-bg:#fcebeb; --bad-text:#791f1f;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#1c1c1a; --bg2:#272725; --bg3:#323230;
+      --text:#f1efe8; --text2:#b4b2a9; --text3:#888780;
+      --border:#444441; --border2:#5f5e5a;
+      --accent:#85b7eb; --accent-bg:#0c447c; --accent-text:#e6f1fb;
+      --good:#97c459; --good-bg:#27500a; --good-text:#eaf3de;
+      --bad:#f09595; --bad-bg:#791f1f; --bad-text:#fcebeb;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,'PingFang TC','Microsoft JhengHei',Arial,sans-serif;background:var(--bg2);color:var(--text);}
+  .wrap{max-width:1100px;margin:0 auto;padding:24px 20px 60px;}
+  h1{font-size:20px;font-weight:500;margin:0 0 4px;}
+  .sub{font-size:13px;color:var(--text2);margin:0 0 20px;}
+  .card{background:var(--bg);border:0.5px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:20px;}
+  .card h2{font-size:15px;font-weight:500;margin:0 0 12px;display:flex;align-items:center;gap:8px;}
+  .card h3{font-size:13px;font-weight:500;margin:16px 0 8px;color:var(--text2);}
+  .step-num{width:20px;height:20px;border-radius:50%;background:var(--accent-bg);color:var(--accent-text);font-size:12px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .drop{border:1.5px dashed var(--border2);border-radius:10px;padding:18px;text-align:center;cursor:pointer;transition:background .15s;}
+  .drop:hover{background:var(--bg2);}
+  .drop input{display:none;}
+  .drop p{margin:0;font-size:13px;color:var(--text2);}
+  .filelist{margin-top:8px;font-size:12px;color:var(--text2);}
+  .filelist div{padding:3px 0;border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between;}
+  .row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px;}
+  label.opt{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2);cursor:pointer;}
+  button{font-family:inherit;font-size:13px;border-radius:8px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);padding:8px 16px;cursor:pointer;}
+  button:hover{background:var(--bg3);}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+  button.primary:hover{opacity:.9;}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  button.danger{color:var(--bad-text);border-color:var(--bad);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{padding:7px 10px;text-align:right;border-bottom:0.5px solid var(--border);white-space:nowrap;}
+  th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left;}
+  th{color:var(--text2);font-weight:500;font-size:12px;position:sticky;top:0;background:var(--bg);}
+  tbody tr:hover{background:var(--bg2);}
+  .pos{color:var(--good);}
+  .neg{color:var(--bad);}
+  .scroll{overflow-x:auto;max-height:460px;overflow-y:auto;border-radius:8px;}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;}
+  .stat{background:var(--bg2);border-radius:8px;padding:12px 14px;}
+  .stat .l{font-size:12px;color:var(--text2);}
+  .stat .v{font-size:20px;font-weight:500;margin-top:4px;}
+  .tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:0.5px solid var(--border);flex-wrap:wrap;}
+  .tab{padding:8px 14px;font-size:13px;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;}
+  .tab.active{color:var(--accent-text);border-bottom-color:var(--accent);font-weight:500;}
+  .empty{font-size:13px;color:var(--text3);text-align:center;padding:30px 0;}
+  input[type=text],input[type=number],select{font-size:13px;padding:7px 10px;border-radius:8px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);}
+  input[type=text]{width:200px;}
+  .badge{font-size:11px;padding:2px 8px;border-radius:6px;background:var(--accent-bg);color:var(--accent-text);}
+  .err{font-size:12px;color:var(--bad-text);background:var(--bad-bg);border-radius:6px;padding:8px 10px;margin-top:10px;}
+  .ok{font-size:12px;color:var(--good-text);background:var(--good-bg);border-radius:6px;padding:8px 10px;margin-top:10px;}
+  .leveltable td{padding:4px 8px;}
+  .leveltable input{width:80px;}
+  .smallcol{font-size:12px;color:var(--text3);margin:6px 0 0;}
+  .pill{font-size:11px;padding:3px 10px;border-radius:6px;background:var(--bg2);color:var(--text2);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>部門薪資彙整工具</h1>
+  <p class="sub">以「原始資料」格式的Excel為唯一主資料庫,每次計算新一季後加進主資料庫,即可比較上一季/去年同期</p>
+
+  <div class="card">
+    <h2><span class="step-num">0</span>上傳目前的主資料庫(選填,沒有的話就從空白開始建立)</h2>
+    <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">欄位需包含：年、月、校區、英文名、中文名、Grade、Percentile、基礎薪資、紅利獎金、總計(就是之前報表「原始資料」分頁的格式)</p>
+    <div class="drop" id="dropzoneMaster">
+      <input type="file" id="fileMaster" accept=".xlsx,.xls,.csv">
+      <p><i class="ti ti-upload"></i> 點擊或拖曳主資料庫檔案到這裡</p>
+    </div>
+    <div class="filelist" id="fileListMaster"></div>
+    <div class="row"><span id="masterStatus" class="pill">尚未載入主資料庫,目前是空白狀態</span></div>
+    <div id="errBoxMaster"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">1</span>選擇這份名冊所屬季度</h2>
+    <div class="row">
+      <select id="defYear"></select>
+      <select id="defQ">
+        <option value="1">Q1(1-3月)</option>
+        <option value="2">Q2(4-6月)</option>
+        <option value="3">Q3(7-9月)</option>
+        <option value="4">Q4(10-12月)</option>
+      </select>
+      <span class="smallcol">大月＝1/4/7/10月(每季第1個月),小月＝其他8個月</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">2</span>上傳GP名冊</h2>
+    <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">欄位需包含：校區、老師中文名/英文名、GP(可以是合併的「GP」欄如"G2P80",或分開的「G值」「P值」兩欄都可)、英語加給(可為"-")</p>
+    <div class="drop" id="dropzoneRoster">
+      <input type="file" id="fileRoster" accept=".xlsx,.xls,.csv">
+      <p><i class="ti ti-upload"></i> 點擊或拖曳GP名冊到這裡</p>
+    </div>
+    <div class="filelist" id="fileListRoster"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">3</span>上傳定義表(GP基礎薪資定義 / 紅利定義)</h2>
+    <div class="row">
+      <div style="flex:1;min-width:240px;">
+        <div class="drop" id="dropzoneGP">
+          <input type="file" id="fileGP" accept=".xlsx,.xls,.csv">
+          <p><i class="ti ti-upload"></i> GP基礎薪資定義(Grade/Percentile/平均單月金額)</p>
+        </div>
+        <div class="filelist" id="fileListGP"></div>
+      </div>
+      <div style="flex:1;min-width:240px;">
+        <div class="drop" id="dropzoneBonus">
+          <input type="file" id="fileBonus" accept=".xlsx,.xls,.csv">
+          <p><i class="ti ti-upload"></i> 紅利定義(Grade/Percentile/每季發放總額)</p>
+        </div>
+        <div class="filelist" id="fileListBonus"></div>
+      </div>
+    </div>
+    <h3>英語Level獎金(每月固定加給,可修改)</h3>
+    <table class="leveltable" id="levelTable">
+      <tr><td>Level A</td><td><input type="number" id="lvA" value="600"></td>
+          <td>Level B</td><td><input type="number" id="lvB" value="1200"></td>
+          <td>Level C</td><td><input type="number" id="lvC" value="2000"></td>
+          <td>Level D</td><td><input type="number" id="lvD" value="2600"></td>
+          <td>Level E</td><td><input type="number" id="lvE" value="3200"></td></tr>
+    </table>
+    <p style="font-size:12px;color:var(--text3);margin:8px 0 0;">公式：基礎薪資＝固定查 Grade+P20(跟個人實際P值無關)；紅利＝查 Grade+實際P值(直接查,不位移)；大月＝基礎薪資+紅利+英語加給；小月＝基礎薪資+英語加給</p>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button class="primary" id="computeBtn" disabled>計算這一季</button>
+      <button class="primary" id="appendBtn" disabled>加入主資料庫</button>
+      <button id="downloadMasterBtn" disabled>下載更新後的主資料庫</button>
+      <button class="danger" id="clearMasterBtn">清空主資料庫(重新開始)</button>
+    </div>
+    <div class="row"><span id="statusDef" style="font-size:12px;color:var(--text2);"></span></div>
+    <div id="errBoxDef"></div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none;">
+    <div class="tabs">
+      <div class="tab active" data-tab="dept">部門季度彙總</div>
+      <div class="tab" data-tab="personal">個人GP明細(月1/2/3)</div>
+      <div class="tab" data-tab="matrix">個人平均單月薪資總覽</div>
+    </div>
+    <div id="tab-dept">
+      <div class="stat-grid" id="deptStats"></div>
+      <div class="scroll"><table id="deptTable"></table></div>
+    </div>
+    <div id="tab-personal" style="display:none;">
+      <div class="row" style="margin:0 0 12px;">
+        <select id="quarterFilter"><option value="">全部季度</option></select>
+        <input type="text" id="searchBox" placeholder="搜尋姓名 / GP值 / 校區">
+      </div>
+      <div class="scroll"><table id="personalTable"></table></div>
+    </div>
+    <div id="tab-matrix" style="display:none;">
+      <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">每位老師橫向比較各季度的平均單月薪資</p>
+      <div class="scroll"><table id="matrixTable"></table></div>
+    </div>
+  </div>
+  <div class="empty" id="emptyState">主資料庫目前沒有資料 — 完成上面步驟並按「加入主資料庫」後就會顯示彙總結果</div>
+</div>
+
+<script>
+/* ---------- shared helpers ---------- */
+function num(v){
+  if(v === undefined || v === null || v === '') return 0;
+  const n = parseFloat(String(v).replace(/[^0-9.\-]/g,''));
+  return isNaN(n) ? 0 : n;
+}
+function findCol(headers, candidates){
+  for(const h of headers){
+    const clean = String(h).trim();
+    for(const c of candidates){ if(clean.includes(c)) return h; }
+  }
+  return null;
+}
+async function readFile(file){
+  const buf = await file.arrayBuffer();
+  let wb;
+  if(file.name.toLowerCase().endsWith('.csv')){
+    const text = new TextDecoder('utf-8').decode(buf);
+    wb = XLSX.read(text, {type:'string'});
+  } else { wb = XLSX.read(buf, {type:'array'}); }
+  let rows = [];
+  wb.SheetNames.forEach(sn => {
+    const sheetName = sn;
+    const json = XLSX.utils.sheet_to_json(wb.Sheets[sn], {defval:''});
+    if(json.length) rows = rows.concat(json);
+  });
+  return rows;
+}
+function fmt(n){ if(n===null||n===undefined||isNaN(n)) return '-'; return Math.round(n).toLocaleString(); }
+function fmtPct(n){ if(n===null||n===undefined) return '-'; const p=(n*100).toFixed(1); return (n>=0?'+':'')+p+'%'; }
+function pctClass(n){ if(n===null||n===undefined) return ''; return n>=0 ? 'pos' : 'neg'; }
+function quarterMinus1(q){ const y=parseInt(q.slice(0,4)), qn=parseInt(q.slice(5)); return qn===1?`${y-1}Q4`:`${y}Q${qn-1}`; }
+function quarterYearAgo(q){ const y=parseInt(q.slice(0,4)), qn=parseInt(q.slice(5)); return `${y-1}Q${qn}`; }
+function sortQuarters(arr){
+  return arr.slice().sort((a,b)=>{
+    const [ay,aq]=[parseInt(a.slice(0,4)),parseInt(a.slice(5))], [by,bq]=[parseInt(b.slice(0,4)),parseInt(b.slice(5))];
+    return ay-by || aq-bq;
+  });
+}
+
+/* ---------- master database (in-memory, file-driven) ---------- */
+let masterRows = []; // {年,月,年季,季,校區,英文名,中文名,Grade,Percentile,基礎薪資,紅利獎金,總計,資料來源}
+
+function setupDrop(dzId, inputId, onFiles){
+  const dz=document.getElementById(dzId), inp=document.getElementById(inputId);
+  dz.addEventListener('click', ()=>inp.click());
+  dz.addEventListener('dragover', e=>{e.preventDefault(); dz.style.background='var(--bg2)';});
+  dz.addEventListener('dragleave', ()=>dz.style.background='');
+  dz.addEventListener('drop', e=>{e.preventDefault(); dz.style.background=''; onFiles([e.dataTransfer.files[0]]);});
+  inp.addEventListener('change', e=>onFiles([e.target.files[0]]));
+}
+
+setupDrop('dropzoneMaster','fileMaster', async files=>{
+  if(!files[0]) return;
+  const errBox = document.getElementById('errBoxMaster');
+  errBox.innerHTML='';
+  document.getElementById('fileListMaster').innerHTML = `<div><span>${files[0].name}</span></div>`;
+  try{
+    const allRows = await readFile(files[0]);
+    if(allRows.length===0) throw new Error('檔案沒有讀到任何資料列');
+    const headers = Object.keys(allRows[0]);
+    const cYear=findCol(headers,['年份','年']), cMonth=findCol(headers,['月份','月']),
+          cCampus=findCol(headers,['校區']), cEn=findCol(headers,['英文名']), cCn=findCol(headers,['中文名']),
+          cGrade=findCol(headers,['Grade']), cPct=findCol(headers,['Percentile']),
+          cBase=findCol(headers,['基礎薪資']), cBonus=findCol(headers,['紅利獎金']), cTotal=findCol(headers,['總計']),
+          cSource=findCol(headers,['資料來源']);
+    const missing=[];
+    if(!cYear)missing.push('年'); if(!cMonth)missing.push('月');
+    if(!cTotal)missing.push('總計');
+    if(missing.length) throw new Error('主資料庫檔案找不到必要欄位：'+missing.join('、'));
+    masterRows = allRows.map(r=>{
+      const y=parseInt(String(r[cYear]).replace(/[^0-9]/g,'')), m=parseInt(String(r[cMonth]).replace(/[^0-9]/g,''));
+      if(!y || !m) return null;
+      const q=Math.floor((m-1)/3)+1;
+      return {年:y,月:m,年季:`${y}Q${q}`,季:q,
+        校區: cCampus?String(r[cCampus]).trim():'', 英文名: cEn?String(r[cEn]).trim():'', 中文名: cCn?String(r[cCn]).trim():'',
+        Grade: cGrade?String(r[cGrade]).trim():'', Percentile: cPct?String(r[cPct]).trim():'',
+        基礎薪資: cBase?num(r[cBase]):0, 紅利獎金: cBonus?num(r[cBonus]):0, 總計: cTotal?num(r[cTotal]):0,
+        資料來源: cSource?String(r[cSource]).trim():'主資料庫匯入'};
+    }).filter(Boolean);
+    updateMasterStatus();
+    renderAll();
+  }catch(e){ errBox.innerHTML = `<div class="err">${e.message}</div>`; }
+});
+
+function updateMasterStatus(){
+  const el = document.getElementById('masterStatus');
+  if(masterRows.length===0){ el.textContent='尚未載入主資料庫,目前是空白狀態'; document.getElementById('downloadMasterBtn').disabled=true; return; }
+  const quarters = sortQuarters(Array.from(new Set(masterRows.map(r=>r.年季))));
+  el.textContent = `主資料庫已載入 ${masterRows.length} 筆,涵蓋 ${quarters[0]} ~ ${quarters[quarters.length-1]}`;
+  document.getElementById('downloadMasterBtn').disabled=false;
+}
+
+document.getElementById('clearMasterBtn').addEventListener('click', ()=>{
+  if(!confirm('確定要清空主資料庫嗎?此動作無法復原(請先下載備份)。')) return;
+  masterRows = [];
+  computedQuarterRows = null;
+  updateMasterStatus();
+  renderAll();
+  document.getElementById('appendBtn').disabled = true;
+});
+
+document.getElementById('downloadMasterBtn').addEventListener('click', ()=>{
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(masterRows.map(r=>({年:r.年,月:r.月,年季:r.年季,季:r.季,校區:r.校區,英文名:r.英文名,中文名:r.中文名,
+    Grade:r.Grade,Percentile:r.Percentile,基礎薪資:Math.round(r.基礎薪資),紅利獎金:Math.round(r.紅利獎金),總計:Math.round(r.總計),資料來源:r.資料來源})));
+  XLSX.utils.book_append_sheet(wb, ws, '原始資料');
+  XLSX.writeFile(wb, '主資料庫_更新版.xlsx');
+});
+
+/* ---------- roster + definitions upload ---------- */
+let rosterRows=null, gpDefRows=null, bonusDefRows=null;
+let computedQuarterRows = null;
+
+const yearSel = document.getElementById('defYear');
+const thisYear = new Date().getFullYear();
+for(let y=thisYear-1; y<=thisYear+2; y++){ const o=document.createElement('option'); o.value=y; o.textContent=y; if(y===thisYear)o.selected=true; yearSel.appendChild(o); }
+
+function checkDefReady(){
+  document.getElementById('computeBtn').disabled = !(rosterRows && gpDefRows && bonusDefRows);
+}
+setupDrop('dropzoneRoster','fileRoster', async files=>{
+  if(!files[0]) return;
+  document.getElementById('fileListRoster').innerHTML = `<div><span>${files[0].name}</span></div>`;
+  rosterRows = await readFile(files[0]);
+  checkDefReady();
+});
+setupDrop('dropzoneGP','fileGP', async files=>{
+  if(!files[0]) return;
+  document.getElementById('fileListGP').innerHTML = `<div><span>${files[0].name}</span></div>`;
+  gpDefRows = await readFile(files[0]);
+  checkDefReady();
+});
+setupDrop('dropzoneBonus','fileBonus', async files=>{
+  if(!files[0]) return;
+  document.getElementById('fileListBonus').innerHTML = `<div><span>${files[0].name}</span></div>`;
+  bonusDefRows = await readFile(files[0]);
+  checkDefReady();
+});
+
+document.getElementById('computeBtn').addEventListener('click', ()=>{
+  const errBox=document.getElementById('errBoxDef'), statusEl=document.getElementById('statusDef');
+  errBox.innerHTML=''; statusEl.textContent='';
+  try{
+    const year = parseInt(yearSel.value), qn = parseInt(document.getElementById('defQ').value);
+    const quarterKey = `${year}Q${qn}`;
+    const monthsInQ = {1:[1,2,3],2:[4,5,6],3:[7,8,9],4:[10,11,12]}[qn];
+
+    const rh = Object.keys(rosterRows[0]);
+    const cCampus=findCol(rh,['校區']);
+    const cNameEn=findCol(rh,['英文名']), cNameCn=findCol(rh,['中文名']), cNameGeneric=findCol(rh,['姓名']);
+    const cP=findCol(rh,['P值','Percentile']), cG=findCol(rh,['G值','Grade']);
+    const cGP=findCol(rh,['GP']);
+    const cLevel=findCol(rh,['英語','加給','Level']);
+    if(!cNameEn && !cNameCn && !cNameGeneric) throw new Error('GP名冊找不到姓名欄位(中文名/英文名/姓名)');
+    if(!cP && !cG && !cGP) throw new Error('GP名冊找不到GP欄位(G值+P值,或合併的GP欄)');
+
+    const gh = Object.keys(gpDefRows[0]);
+    const gG=findCol(gh,['Grade','G值']), gP=findCol(gh,['Percentile','P值']), gAmt=findCol(gh,['平均單月金額','金額']);
+    if(!gG||!gP||!gAmt) throw new Error('GP基礎薪資定義表欄位辨識失敗(需要Grade/Percentile/平均單月金額)');
+    const gpMap={};
+    gpDefRows.forEach(r=>{ gpMap[String(r[gG]).trim()+'|'+String(r[gP]).trim()] = num(r[gAmt]); });
+
+    const bh = Object.keys(bonusDefRows[0]);
+    const bG=findCol(bh,['Grade','G值']), bP=findCol(bh,['Percentile','P值']), bAmt=findCol(bh,['紅利','總額']);
+    if(!bG||!bP||!bAmt) throw new Error('紅利定義表欄位辨識失敗(需要Grade/Percentile/每季發放總額)');
+    const bonusMap={};
+    bonusDefRows.forEach(r=>{ bonusMap[String(r[bG]).trim()+'|'+String(r[bP]).trim()] = num(r[bAmt]); });
+
+    const levelMap={ 'A':num(document.getElementById('lvA').value), 'B':num(document.getElementById('lvB').value),
+      'C':num(document.getElementById('lvC').value), 'D':num(document.getElementById('lvD').value), 'E':num(document.getElementById('lvE').value) };
+
+    let missingDef = 0;
+    const teacherRows = rosterRows.map(r=>{
+      let G='', P='';
+      if(cG && cP){ G=String(r[cG]).trim(); P=String(r[cP]).trim(); }
+      else if(cGP){
+        const gp = String(r[cGP]).trim();
+        const m = gp.match(/^(G\d+)\s*(P\d+)$/i) || gp.match(/^(G\d+)[\s\-_,]*\s*(P\d+)$/i);
+        if(m){ G=m[1].toUpperCase(); P=m[2].toUpperCase(); } else { G=gp; P=''; }
+      }
+      const baseKey = G+'|P20';
+      const bonusKey = G+'|'+P;
+      const base = gpMap[baseKey]; const bonus = bonusMap[bonusKey];
+      if(base===undefined || bonus===undefined) missingDef++;
+      const levelRaw = cLevel ? String(r[cLevel]).trim() : '';
+      const lm = levelRaw.match(/Level\s*([A-E])/i);
+      const levelAmt = lm ? (levelMap[lm[1].toUpperCase()]||0) : 0;
+      const baseAmt = (base||0) + levelAmt;
+      const bonusAmt = bonus||0;
+      const nameEn = cNameEn ? String(r[cNameEn]).trim() : '';
+      const nameCn = cNameCn ? String(r[cNameCn]).trim() : '';
+      const nameGeneric = cNameGeneric ? String(r[cNameGeneric]).trim() : '';
+      return {
+        校區: cCampus?String(r[cCampus]).trim():'', 英文名: nameEn||nameGeneric, 中文名: nameCn,
+        Grade:G, Percentile:P, 基礎薪資定義: baseAmt, 紅利定義: bonusAmt, 英語Level: levelRaw||'-'
+      };
+    });
+
+    // expand into 3 monthly rows per teacher (raw-data compatible)
+    let rows = [];
+    teacherRows.forEach(t=>{
+      monthsInQ.forEach((m, idx)=>{
+        const isBig = idx===0;
+        rows.push({
+          年:year, 月:m, 年季:quarterKey, 季:qn,
+          校區:t.校區, 英文名:t.英文名, 中文名:t.中文名, Grade:t.Grade, Percentile:t.Percentile,
+          基礎薪資: t.基礎薪資定義, 紅利獎金: isBig? t.紅利定義 : 0,
+          總計: t.基礎薪資定義 + (isBig? t.紅利定義 : 0),
+          資料來源: 'GP名冊試算(定義版)'
+        });
+      });
+    });
+    computedQuarterRows = {quarterKey, rows, teacherCount: teacherRows.length};
+    document.getElementById('appendBtn').disabled = false;
+    statusEl.textContent = missingDef>0
+      ? `已計算 ${quarterKey},共 ${teacherRows.length} 位老師,但有 ${missingDef} 人查不到GP定義(金額算為0),按「加入主資料庫」前請先確認`
+      : `已計算 ${quarterKey},共 ${teacherRows.length} 位老師,可以按「加入主資料庫」`;
+  }catch(e){ errBox.innerHTML = `<div class="err">${e.message}</div>`; }
+});
+
+document.getElementById('appendBtn').addEventListener('click', ()=>{
+  if(!computedQuarterRows) return;
+  const q = computedQuarterRows.quarterKey;
+  const exists = masterRows.some(r=>r.年季===q);
+  if(exists){
+    if(!confirm(`主資料庫已經有 ${q} 的資料,要覆蓋掉嗎?`)) return;
+    masterRows = masterRows.filter(r=>r.年季!==q);
+  }
+  masterRows = masterRows.concat(computedQuarterRows.rows);
+  updateMasterStatus();
+  renderAll();
+  document.getElementById('statusDef').textContent = `${q} 已加入主資料庫(共 ${masterRows.length} 筆)`;
+  document.getElementById('appendBtn').disabled = true;
+  computedQuarterRows = null;
+});
+
+/* ---------- aggregation + rendering (driven by masterRows) ---------- */
+function deptSeries(){
+  const byQ={}; masterRows.forEach(r=>{byQ[r.年季]=(byQ[r.年季]||0)+r.總計;});
+  const quarters = sortQuarters(Object.keys(byQ));
+  return quarters.map(q=>{
+    const total=byQ[q], prev=byQ[quarterMinus1(q)], ya=byQ[quarterYearAgo(q)];
+    return {年季:q, 薪資總量:total, 上一季: prev!==undefined?prev:null, 季增減: (prev!==undefined&&prev!==0)?(total-prev)/prev:null,
+      去年同期: ya!==undefined?ya:null, 年增減: (ya!==undefined&&ya!==0)?(total-ya)/ya:null};
+  });
+}
+function personalAll(){
+  const groups={};
+  masterRows.forEach(r=>{
+    const key=r.英文名+'|'+r.中文名+'|'+r.年季;
+    if(!groups[key]) groups[key]={年季:r.年季,英文名:r.英文名,中文名:r.中文名,校區:r.校區,months:{},lastGrade:'',lastPct:'',lastMonth:0};
+    groups[key].months[r.月]=(groups[key].months[r.月]||0)+r.總計;
+    if(r.月>=groups[key].lastMonth){groups[key].lastMonth=r.月; groups[key].lastGrade=r.Grade; groups[key].lastPct=r.Percentile; groups[key].校區=r.校區;}
+  });
+  return Object.values(groups).map(g=>{
+    const monthsInQ=Object.keys(g.months).map(Number).sort((a,b)=>a-b);
+    const vals=monthsInQ.map(m=>g.months[m]); const total=vals.reduce((a,b)=>a+b,0);
+    return {年季:g.年季,校區:g.校區,姓名:(g.英文名+' '+g.中文名).trim(),英文名:g.英文名,中文名:g.中文名,
+      GP值:g.lastGrade+g.lastPct, 月份:monthsInQ, 月金額:vals, 季合計:total, 平均單月薪資:total/(vals.length||1)};
+  }).sort((a,b)=>a.姓名.localeCompare(b.姓名)||a.年季.localeCompare(b.年季));
+}
+function renderAll(){
+  const hasData = masterRows.length>0;
+  document.getElementById('resultCard').style.display = hasData?'block':'none';
+  document.getElementById('emptyState').style.display = hasData?'none':'block';
+  renderDeptStats(); renderDeptTable(); renderQuarterFilter(); renderPersonalTable();
+}
+function renderDeptStats(){
+  const el=document.getElementById('deptStats'); const series=deptSeries();
+  if(series.length===0){el.innerHTML='';return;}
+  const latest=series[series.length-1];
+  el.innerHTML=`<div class="stat"><div class="l">最新季度</div><div class="v">${latest.年季}</div></div>
+    <div class="stat"><div class="l">薪資總量</div><div class="v">${fmt(latest.薪資總量)}</div></div>
+    <div class="stat"><div class="l">季增減%</div><div class="v ${pctClass(latest.季增減)}">${fmtPct(latest.季增減)}</div></div>
+    <div class="stat"><div class="l">年增減%</div><div class="v ${pctClass(latest.年增減)}">${fmtPct(latest.年增減)}</div></div>`;
+}
+function renderDeptTable(){
+  const t=document.getElementById('deptTable'); const series=deptSeries();
+  let html='<thead><tr><th>年季</th><th>薪資總量</th><th>上一季金額</th><th>季增減%</th><th>去年同期金額</th><th>年增減%</th></tr></thead><tbody>';
+  series.forEach(r=>{html+=`<tr><td>${r.年季}</td><td>${fmt(r.薪資總量)}</td><td>${fmt(r.上一季)}</td>
+    <td class="${pctClass(r.季增減)}">${fmtPct(r.季增減)}</td><td>${fmt(r.去年同期)}</td><td class="${pctClass(r.年增減)}">${fmtPct(r.年增減)}</td></tr>`;});
+  t.innerHTML=html+'</tbody>';
+}
+function renderQuarterFilter(){
+  const sel=document.getElementById('quarterFilter'); const keys=sortQuarters(Array.from(new Set(masterRows.map(r=>r.年季))));
+  const current = sel.value;
+  sel.innerHTML='<option value="">全部季度</option>'+keys.map(q=>`<option value="${q}">${q}</option>`).join('');
+  sel.value = keys.includes(current) ? current : '';
+}
+function renderPersonalTable(filter, quarterFilter){
+  const t=document.getElementById('personalTable'); let rows=personalAll();
+  const qf = quarterFilter!==undefined ? quarterFilter : document.getElementById('quarterFilter').value;
+  if(qf) rows = rows.filter(r=>r.年季===qf);
+  if(filter){ const f=filter.toLowerCase(); rows=rows.filter(r=>(r.姓名+r.GP值+r.校區).toLowerCase().includes(f)); }
+  let html='<thead><tr><th>年季</th><th>校區</th><th>姓名</th><th>GP值</th><th>月份明細</th><th>季合計</th><th>平均單月薪資</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    const detail=r.月份.map((m,i)=>`${m}月:${fmt(r.月金額[i])}`).join(' / ');
+    html+=`<tr><td>${r.年季}</td><td>${r.校區}</td><td>${r.姓名}</td><td><span class="badge">${r.GP值}</span></td>
+      <td style="text-align:left;font-size:12px;color:var(--text2);">${detail}</td><td>${fmt(r.季合計)}</td><td>${fmt(r.平均單月薪資)}</td></tr>`;
+  });
+  t.innerHTML=html+'</tbody>';
+}
+function renderMatrix(){
+  const t=document.getElementById('matrixTable');
+  const keys = sortQuarters(Array.from(new Set(masterRows.map(r=>r.年季))));
+  const allRows = personalAll();
+  const people = {};
+  allRows.forEach(r=>{
+    const pk = r.姓名+'|'+r.校區;
+    if(!people[pk]) people[pk] = {姓名:r.姓名, 校區:r.校區, byQ:{}};
+    people[pk].byQ[r.年季] = r.平均單月薪資;
+  });
+  const peopleList = Object.values(people).sort((a,b)=>(a.校區+a.姓名).localeCompare(b.校區+b.姓名));
+  let html = '<thead><tr><th>校區</th><th>姓名</th>'+keys.map(q=>`<th>${q}</th>`).join('')+'</tr></thead><tbody>';
+  peopleList.forEach(p=>{
+    html += `<tr><td>${p.校區}</td><td>${p.姓名}</td>`+keys.map(q=>`<td>${p.byQ[q]!==undefined?fmt(p.byQ[q]):'-'}</td>`).join('')+'</tr>';
+  });
+  t.innerHTML = html+'</tbody>';
+}
+document.querySelectorAll('[data-tab]').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('[data-tab]').forEach(t=>t.classList.remove('active')); tab.classList.add('active');
+    document.getElementById('tab-dept').style.display = tab.dataset.tab==='dept'?'block':'none';
+    document.getElementById('tab-personal').style.display = tab.dataset.tab==='personal'?'block':'none';
+    document.getElementById('tab-matrix').style.display = tab.dataset.tab==='matrix'?'block':'none';
+    if(tab.dataset.tab==='matrix') renderMatrix();
+  });
+});
+document.getElementById('searchBox').addEventListener('input', e=>renderPersonalTable(e.target.value, undefined));
+document.getElementById('quarterFilter').addEventListener('change', e=>renderPersonalTable(document.getElementById('searchBox').value, e.target.value));
+
+updateMasterStatus();
+</script>
+</body>
+</html>
