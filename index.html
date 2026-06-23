@@ -497,18 +497,31 @@ function deptSeries(){
   });
 }
 function personalAll(){
-  // build a name backfill map: identity key -> best-known 中文名/英文名 across all quarters
+  // pass 1: build alias map (英文名 -> 中文名) from rows where both are filled
+  const enToCn = {};
+  masterRows.forEach(r=>{
+    const en=(r.英文名||'').trim(), cn=(r.中文名||'').trim();
+    if(en && cn) enToCn[en] = cn;
+  });
+  // canonical id resolver: prefer the row's own 中文名; if missing, look up via 英文名 alias map; else fall back to 英文名 alone
+  function canonicalId(r){
+    const en=(r.英文名||'').trim(), cn=(r.中文名||'').trim();
+    return cn || enToCn[en] || en;
+  }
+  // pass 2: build display-name info per canonical id
   const nameInfo = {};
   masterRows.forEach(r=>{
-    const idKey = (r.中文名||'').trim() || (r.英文名||'').trim();
-    if(!idKey) return;
-    if(!nameInfo[idKey]) nameInfo[idKey] = {英文名:'', 中文名:''};
-    if((r.英文名||'').trim()) nameInfo[idKey].英文名 = r.英文名.trim();
-    if((r.中文名||'').trim()) nameInfo[idKey].中文名 = r.中文名.trim();
+    const id = canonicalId(r);
+    if(!id) return;
+    const en=(r.英文名||'').trim(), cn=(r.中文名||'').trim();
+    if(!nameInfo[id]) nameInfo[id] = {英文名:'', 中文名:''};
+    if(en) nameInfo[id].英文名 = en;
+    if(cn) nameInfo[id].中文名 = cn;
+    else if(enToCn[en]) nameInfo[id].中文名 = enToCn[en];
   });
   const groups={};
   masterRows.forEach(r=>{
-    const idKey = (r.中文名||'').trim() || (r.英文名||'').trim();
+    const idKey = canonicalId(r);
     const key=idKey+'|'+r.年季;
     if(!groups[key]) groups[key]={年季:r.年季,idKey,校區:r.校區,months:{},lastGrade:'',lastPct:'',lastMonth:0};
     groups[key].months[r.月]=(groups[key].months[r.月]||0)+r.總計;
