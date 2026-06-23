@@ -80,7 +80,7 @@
 
   <div class="card">
     <h2><span class="step-num">0</span>上傳目前的主資料庫(選填,沒有的話就從空白開始建立)</h2>
-    <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">欄位需包含：年、月、校區、英文名、中文名、Grade、Percentile、基礎薪資、紅利獎金、總計(就是之前報表「原始資料」分頁的格式)</p>
+    <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">欄位需包含：年、月、校區、英文名、中文名、Grade、Percentile、基礎薪資、紅利獎金、總計(就是之前報表「原始資料」分頁的格式),「其他加給」欄位選填</p>
     <div class="drop" id="dropzoneMaster">
       <input type="file" id="fileMaster" accept=".xlsx,.xls,.csv">
       <p><i class="ti ti-upload"></i> 點擊或拖曳主資料庫檔案到這裡</p>
@@ -141,6 +141,20 @@
           <td>Level E</td><td><input type="number" id="lvE" value="3200"></td></tr>
     </table>
     <p style="font-size:12px;color:var(--text3);margin:8px 0 0;">公式：基礎薪資＝固定查 Grade+P20(跟個人實際P值無關)；紅利＝查 Grade+實際P值(直接查,不位移)；大月＝基礎薪資+紅利+英語加給；小月＝基礎薪資+英語加給</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">4</span>額外加給(選填,例如代課/額外授課津貼)</h2>
+    <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">只對特定老師、特定月份加一筆固定金額,不會混進GP的基礎薪資或紅利,獨立記錄,方便之後查核</p>
+    <div class="scroll" style="max-height:none;">
+      <table id="extraTable">
+        <thead><tr><th>姓名(需與名冊一致)</th><th>月份</th><th>金額</th><th>備註</th><th></th></tr></thead>
+        <tbody id="extraTableBody"></tbody>
+      </table>
+    </div>
+    <div class="row">
+      <button id="addExtraRowBtn">+ 新增一筆額外加給</button>
+    </div>
   </div>
 
   <div class="card">
@@ -244,7 +258,7 @@ setupDrop('dropzoneMaster','fileMaster', async files=>{
     const cYear=findCol(headers,['年份','年']), cMonth=findCol(headers,['月份','月']),
           cCampus=findCol(headers,['校區']), cEn=findCol(headers,['英文名']), cCn=findCol(headers,['中文名']),
           cGrade=findCol(headers,['Grade']), cPct=findCol(headers,['Percentile']),
-          cBase=findCol(headers,['基礎薪資']), cBonus=findCol(headers,['紅利獎金']), cTotal=findCol(headers,['總計']),
+          cBase=findCol(headers,['基礎薪資']), cBonus=findCol(headers,['紅利獎金']), cExtra=findCol(headers,['其他加給']), cTotal=findCol(headers,['總計']),
           cSource=findCol(headers,['資料來源']);
     const missing=[];
     if(!cYear)missing.push('年'); if(!cMonth)missing.push('月');
@@ -257,7 +271,7 @@ setupDrop('dropzoneMaster','fileMaster', async files=>{
       return {年:y,月:m,年季:`${y}Q${q}`,季:q,
         校區: cCampus?String(r[cCampus]).trim():'', 英文名: cEn?String(r[cEn]).trim():'', 中文名: cCn?String(r[cCn]).trim():'',
         Grade: cGrade?String(r[cGrade]).trim():'', Percentile: cPct?String(r[cPct]).trim():'',
-        基礎薪資: cBase?num(r[cBase]):0, 紅利獎金: cBonus?num(r[cBonus]):0, 總計: cTotal?num(r[cTotal]):0,
+        基礎薪資: cBase?num(r[cBase]):0, 紅利獎金: cBonus?num(r[cBonus]):0, 其他加給: cExtra?num(r[cExtra]):0, 總計: cTotal?num(r[cTotal]):0,
         資料來源: cSource?String(r[cSource]).trim():'主資料庫匯入'};
     }).filter(Boolean);
     updateMasterStatus();
@@ -285,7 +299,7 @@ document.getElementById('clearMasterBtn').addEventListener('click', ()=>{
 document.getElementById('downloadMasterBtn').addEventListener('click', ()=>{
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(masterRows.map(r=>({年:r.年,月:r.月,年季:r.年季,季:r.季,校區:r.校區,英文名:r.英文名,中文名:r.中文名,
-    Grade:r.Grade,Percentile:r.Percentile,基礎薪資:Math.round(r.基礎薪資),紅利獎金:Math.round(r.紅利獎金),總計:Math.round(r.總計),資料來源:r.資料來源})));
+    Grade:r.Grade,Percentile:r.Percentile,基礎薪資:Math.round(r.基礎薪資),紅利獎金:Math.round(r.紅利獎金),其他加給:Math.round(r.其他加給||0),總計:Math.round(r.總計),資料來源:r.資料來源})));
   XLSX.utils.book_append_sheet(wb, ws, '原始資料');
   XLSX.writeFile(wb, '主資料庫_更新版.xlsx');
 });
@@ -300,6 +314,47 @@ for(let y=thisYear-1; y<=thisYear+2; y++){ const o=document.createElement('optio
 
 function checkDefReady(){
   document.getElementById('computeBtn').disabled = !(rosterRows && gpDefRows && bonusDefRows);
+}
+
+/* ---------- extra ad-hoc payments table ---------- */
+function currentQuarterMonths(){
+  const qn = parseInt(document.getElementById('defQ').value);
+  return {1:[1,2,3],2:[4,5,6],3:[7,8,9],4:[10,11,12]}[qn];
+}
+function addExtraRow(){
+  const tbody = document.getElementById('extraTableBody');
+  const tr = document.createElement('tr');
+  const months = currentQuarterMonths();
+  tr.innerHTML = `
+    <td><input type="text" class="extraName" placeholder="例如 Josh 王小明" style="width:160px;"></td>
+    <td><select class="extraMonth">${months.map(m=>`<option value="${m}">${m}月</option>`).join('')}</select></td>
+    <td><input type="number" class="extraAmt" placeholder="10000" style="width:100px;"></td>
+    <td><input type="text" class="extraNote" placeholder="例如 教中學課程津貼" style="width:160px;"></td>
+    <td><button class="removeExtraBtn">移除</button></td>`;
+  tr.querySelector('.removeExtraBtn').addEventListener('click', ()=>tr.remove());
+  tbody.appendChild(tr);
+}
+document.getElementById('addExtraRowBtn').addEventListener('click', addExtraRow);
+document.getElementById('defQ').addEventListener('change', refreshExtraMonthOptions);
+document.getElementById('defYear').addEventListener('change', refreshExtraMonthOptions);
+function refreshExtraMonthOptions(){
+  const months = currentQuarterMonths();
+  document.querySelectorAll('.extraMonth').forEach(sel=>{
+    const cur = sel.value;
+    sel.innerHTML = months.map(m=>`<option value="${m}">${m}月</option>`).join('');
+    if(months.includes(parseInt(cur))) sel.value = cur;
+  });
+}
+function getExtraPayments(){
+  const rows = [];
+  document.querySelectorAll('#extraTableBody tr').forEach(tr=>{
+    const name = tr.querySelector('.extraName').value.trim();
+    const month = parseInt(tr.querySelector('.extraMonth').value);
+    const amt = num(tr.querySelector('.extraAmt').value);
+    const note = tr.querySelector('.extraNote').value.trim();
+    if(name && amt) rows.push({name, month, amt, note});
+  });
+  return rows;
 }
 setupDrop('dropzoneRoster','fileRoster', async files=>{
   if(!files[0]) return;
@@ -380,24 +435,32 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
     });
 
     // expand into 3 monthly rows per teacher (raw-data compatible)
+    const extraPayments = getExtraPayments();
     let rows = [];
+    let extraApplied = 0;
     teacherRows.forEach(t=>{
+      const fullName = (t.英文名+' '+t.中文名).trim();
       monthsInQ.forEach((m, idx)=>{
         const isBig = idx===0;
+        const matched = extraPayments.filter(e => e.month===m && (fullName.includes(e.name) || e.name.includes(t.英文名) || e.name.includes(t.中文名)));
+        const extraAmt = matched.reduce((a,e)=>a+e.amt,0);
+        if(matched.length) extraApplied += matched.length;
         rows.push({
           年:year, 月:m, 年季:quarterKey, 季:qn,
           校區:t.校區, 英文名:t.英文名, 中文名:t.中文名, Grade:t.Grade, Percentile:t.Percentile,
-          基礎薪資: t.基礎薪資定義, 紅利獎金: isBig? t.紅利定義 : 0,
-          總計: t.基礎薪資定義 + (isBig? t.紅利定義 : 0),
+          基礎薪資: t.基礎薪資定義, 紅利獎金: isBig? t.紅利定義 : 0, 其他加給: extraAmt,
+          總計: t.基礎薪資定義 + (isBig? t.紅利定義 : 0) + extraAmt,
           資料來源: 'GP名冊試算(定義版)'
         });
       });
     });
     computedQuarterRows = {quarterKey, rows, teacherCount: teacherRows.length};
     document.getElementById('appendBtn').disabled = false;
-    statusEl.textContent = missingDef>0
-      ? `已計算 ${quarterKey},共 ${teacherRows.length} 位老師,但有 ${missingDef} 人查不到GP定義(金額算為0),按「加入主資料庫」前請先確認`
-      : `已計算 ${quarterKey},共 ${teacherRows.length} 位老師,可以按「加入主資料庫」`;
+    statusEl.textContent = (missingDef>0
+      ? `已計算 ${quarterKey},共 ${teacherRows.length} 位老師,但有 ${missingDef} 人查不到GP定義(金額算為0)；`
+      : `已計算 ${quarterKey},共 ${teacherRows.length} 位老師；`)
+      + (extraApplied>0 ? `已套用 ${extraApplied} 筆額外加給,` : '')
+      + `可以按「加入主資料庫」`;
   }catch(e){ errBox.innerHTML = `<div class="err">${e.message}</div>`; }
 });
 
@@ -415,6 +478,7 @@ document.getElementById('appendBtn').addEventListener('click', ()=>{
   document.getElementById('statusDef').textContent = `${q} 已加入主資料庫(共 ${masterRows.length} 筆)`;
   document.getElementById('appendBtn').disabled = true;
   computedQuarterRows = null;
+  document.getElementById('extraTableBody').innerHTML = '';
 });
 
 /* ---------- aggregation + rendering (driven by masterRows) ---------- */
@@ -423,7 +487,7 @@ function deptSeries(){
   masterRows.forEach(r=>{
     byQ[r.年季]=(byQ[r.年季]||0)+r.總計;
     if(!countByQ[r.年季]) countByQ[r.年季] = new Set();
-    countByQ[r.年季].add(r.英文名+'|'+r.中文名);
+    countByQ[r.年季].add((r.中文名||'').trim() || (r.英文名||'').trim());
   });
   const quarters = sortQuarters(Object.keys(byQ));
   return quarters.map(q=>{
@@ -433,17 +497,28 @@ function deptSeries(){
   });
 }
 function personalAll(){
+  // build a name backfill map: identity key -> best-known 中文名/英文名 across all quarters
+  const nameInfo = {};
+  masterRows.forEach(r=>{
+    const idKey = (r.中文名||'').trim() || (r.英文名||'').trim();
+    if(!idKey) return;
+    if(!nameInfo[idKey]) nameInfo[idKey] = {英文名:'', 中文名:''};
+    if((r.英文名||'').trim()) nameInfo[idKey].英文名 = r.英文名.trim();
+    if((r.中文名||'').trim()) nameInfo[idKey].中文名 = r.中文名.trim();
+  });
   const groups={};
   masterRows.forEach(r=>{
-    const key=r.英文名+'|'+r.中文名+'|'+r.年季;
-    if(!groups[key]) groups[key]={年季:r.年季,英文名:r.英文名,中文名:r.中文名,校區:r.校區,months:{},lastGrade:'',lastPct:'',lastMonth:0};
+    const idKey = (r.中文名||'').trim() || (r.英文名||'').trim();
+    const key=idKey+'|'+r.年季;
+    if(!groups[key]) groups[key]={年季:r.年季,idKey,校區:r.校區,months:{},lastGrade:'',lastPct:'',lastMonth:0};
     groups[key].months[r.月]=(groups[key].months[r.月]||0)+r.總計;
     if(r.月>=groups[key].lastMonth){groups[key].lastMonth=r.月; groups[key].lastGrade=r.Grade; groups[key].lastPct=r.Percentile; groups[key].校區=r.校區;}
   });
   return Object.values(groups).map(g=>{
     const monthsInQ=Object.keys(g.months).map(Number).sort((a,b)=>a-b);
     const vals=monthsInQ.map(m=>g.months[m]); const total=vals.reduce((a,b)=>a+b,0);
-    return {年季:g.年季,校區:g.校區,姓名:(g.英文名+' '+g.中文名).trim(),英文名:g.英文名,中文名:g.中文名,
+    const info = nameInfo[g.idKey] || {英文名:g.idKey,中文名:''};
+    return {年季:g.年季,校區:g.校區,姓名:(info.英文名+' '+info.中文名).trim(),idKey:g.idKey,英文名:info.英文名,中文名:info.中文名,
       GP值:g.lastGrade+g.lastPct, 月份:monthsInQ, 月金額:vals, 季合計:total, 平均單月薪資:total/(vals.length||1)};
   }).sort((a,b)=>a.姓名.localeCompare(b.姓名)||a.年季.localeCompare(b.年季));
 }
@@ -495,9 +570,12 @@ function renderMatrix(){
   const allRows = personalAll();
   const people = {};
   allRows.forEach(r=>{
-    const pk = r.姓名+'|'+r.校區;
+    const pk = r.idKey;
     if(!people[pk]) people[pk] = {姓名:r.姓名, 校區:r.校區, byQ:{}};
     people[pk].byQ[r.年季] = r.平均單月薪資;
+    // keep the most complete display name/campus seen
+    if(r.姓名.length > people[pk].姓名.length) people[pk].姓名 = r.姓名;
+    people[pk].校區 = r.校區 || people[pk].校區;
   });
   const peopleList = Object.values(people).sort((a,b)=>(a.校區+a.姓名).localeCompare(b.校區+b.姓名));
   let html = '<thead><tr><th>校區</th><th>姓名</th>'+keys.map(q=>`<th>${q}</th>`).join('')+'</tr></thead><tbody>';
