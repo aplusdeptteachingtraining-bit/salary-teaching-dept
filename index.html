@@ -419,11 +419,16 @@ document.getElementById('appendBtn').addEventListener('click', ()=>{
 
 /* ---------- aggregation + rendering (driven by masterRows) ---------- */
 function deptSeries(){
-  const byQ={}; masterRows.forEach(r=>{byQ[r.年季]=(byQ[r.年季]||0)+r.總計;});
+  const byQ={}, countByQ={};
+  masterRows.forEach(r=>{
+    byQ[r.年季]=(byQ[r.年季]||0)+r.總計;
+    if(!countByQ[r.年季]) countByQ[r.年季] = new Set();
+    countByQ[r.年季].add(r.英文名+'|'+r.中文名);
+  });
   const quarters = sortQuarters(Object.keys(byQ));
   return quarters.map(q=>{
     const total=byQ[q], prev=byQ[quarterMinus1(q)], ya=byQ[quarterYearAgo(q)];
-    return {年季:q, 薪資總量:total, 上一季: prev!==undefined?prev:null, 季增減: (prev!==undefined&&prev!==0)?(total-prev)/prev:null,
+    return {年季:q, 教師人數: countByQ[q].size, 薪資總量:total, 上一季: prev!==undefined?prev:null, 季增減: (prev!==undefined&&prev!==0)?(total-prev)/prev:null,
       去年同期: ya!==undefined?ya:null, 年增減: (ya!==undefined&&ya!==0)?(total-ya)/ya:null};
   });
 }
@@ -453,14 +458,15 @@ function renderDeptStats(){
   if(series.length===0){el.innerHTML='';return;}
   const latest=series[series.length-1];
   el.innerHTML=`<div class="stat"><div class="l">最新季度</div><div class="v">${latest.年季}</div></div>
+    <div class="stat"><div class="l">教師人數</div><div class="v">${latest.教師人數}</div></div>
     <div class="stat"><div class="l">薪資總量</div><div class="v">${fmt(latest.薪資總量)}</div></div>
     <div class="stat"><div class="l">季增減%</div><div class="v ${pctClass(latest.季增減)}">${fmtPct(latest.季增減)}</div></div>
     <div class="stat"><div class="l">年增減%</div><div class="v ${pctClass(latest.年增減)}">${fmtPct(latest.年增減)}</div></div>`;
 }
 function renderDeptTable(){
   const t=document.getElementById('deptTable'); const series=deptSeries();
-  let html='<thead><tr><th>年季</th><th>薪資總量</th><th>上一季金額</th><th>季增減%</th><th>去年同期金額</th><th>年增減%</th></tr></thead><tbody>';
-  series.forEach(r=>{html+=`<tr><td>${r.年季}</td><td>${fmt(r.薪資總量)}</td><td>${fmt(r.上一季)}</td>
+  let html='<thead><tr><th>年季</th><th>教師人數</th><th>薪資總量</th><th>上一季金額</th><th>季增減%</th><th>去年同期金額</th><th>年增減%</th></tr></thead><tbody>';
+  series.forEach(r=>{html+=`<tr><td>${r.年季}</td><td>${r.教師人數}</td><td>${fmt(r.薪資總量)}</td><td>${fmt(r.上一季)}</td>
     <td class="${pctClass(r.季增減)}">${fmtPct(r.季增減)}</td><td>${fmt(r.去年同期)}</td><td class="${pctClass(r.年增減)}">${fmtPct(r.年增減)}</td></tr>`;});
   t.innerHTML=html+'</tbody>';
 }
@@ -475,10 +481,10 @@ function renderPersonalTable(filter, quarterFilter){
   const qf = quarterFilter!==undefined ? quarterFilter : document.getElementById('quarterFilter').value;
   if(qf) rows = rows.filter(r=>r.年季===qf);
   if(filter){ const f=filter.toLowerCase(); rows=rows.filter(r=>(r.姓名+r.GP值+r.校區).toLowerCase().includes(f)); }
-  let html='<thead><tr><th>年季</th><th>校區</th><th>姓名</th><th>GP值</th><th>月份明細</th><th>季合計</th><th>平均單月薪資</th></tr></thead><tbody>';
+  let html='<thead><tr><th>年季</th><th>姓名</th><th>GP值</th><th>月份明細</th><th>季合計</th><th>平均單月薪資</th></tr></thead><tbody>';
   rows.forEach(r=>{
     const detail=r.月份.map((m,i)=>`${m}月:${fmt(r.月金額[i])}`).join(' / ');
-    html+=`<tr><td>${r.年季}</td><td>${r.校區}</td><td>${r.姓名}</td><td><span class="badge">${r.GP值}</span></td>
+    html+=`<tr><td>${r.年季}</td><td>${r.姓名}</td><td><span class="badge">${r.GP值}</span></td>
       <td style="text-align:left;font-size:12px;color:var(--text2);">${detail}</td><td>${fmt(r.季合計)}</td><td>${fmt(r.平均單月薪資)}</td></tr>`;
   });
   t.innerHTML=html+'</tbody>';
