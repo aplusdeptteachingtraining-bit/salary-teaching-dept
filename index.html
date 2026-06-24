@@ -243,6 +243,9 @@ async function readFile(file){
 function fmt(n){ if(n===null||n===undefined||isNaN(n)) return '-'; return Math.round(n).toLocaleString(); }
 function fmtPct(n){ if(n===null||n===undefined) return '-'; const p=(n*100).toFixed(1); return (n>=0?'+':'')+p+'%'; }
 function pctClass(n){ if(n===null||n===undefined) return ''; return n>=0 ? 'neg' : 'pos'; }
+function fileBadgeHtml(name){
+  return `<div style="display:flex;align-items:center;gap:6px;color:var(--good-text);"><span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--good-bg);font-size:11px;">✓</span><span style="color:var(--text);">${name}</span><span class="pill" style="background:var(--good-bg);color:var(--good-text);">已上傳</span></div>`;
+}
 function quarterMinus1(q){ const y=parseInt(q.slice(0,4)), qn=parseInt(q.slice(5)); return qn===1?`${y-1}Q4`:`${y}Q${qn-1}`; }
 function quarterYearAgo(q){ const y=parseInt(q.slice(0,4)), qn=parseInt(q.slice(5)); return `${y-1}Q${qn}`; }
 function sortQuarters(arr){
@@ -268,7 +271,7 @@ setupDrop('dropzoneMaster','fileMaster', async files=>{
   if(!files[0]) return;
   const errBox = document.getElementById('errBoxMaster');
   errBox.innerHTML='';
-  document.getElementById('fileListMaster').innerHTML = `<div><span>${files[0].name}</span></div>`;
+  document.getElementById('fileListMaster').innerHTML = fileBadgeHtml(files[0].name);
   try{
     const allRows = await readFile(files[0]);
     if(allRows.length===0) throw new Error('檔案沒有讀到任何資料列');
@@ -376,19 +379,19 @@ function getExtraPayments(){
 }
 setupDrop('dropzoneRoster','fileRoster', async files=>{
   if(!files[0]) return;
-  document.getElementById('fileListRoster').innerHTML = `<div><span>${files[0].name}</span></div>`;
+  document.getElementById('fileListRoster').innerHTML = fileBadgeHtml(files[0].name);
   rosterRows = await readFile(files[0]);
   checkDefReady();
 });
 setupDrop('dropzoneGP','fileGP', async files=>{
   if(!files[0]) return;
-  document.getElementById('fileListGP').innerHTML = `<div><span>${files[0].name}</span></div>`;
+  document.getElementById('fileListGP').innerHTML = fileBadgeHtml(files[0].name);
   gpDefRows = await readFile(files[0]);
   checkDefReady();
 });
 setupDrop('dropzoneBonus','fileBonus', async files=>{
   if(!files[0]) return;
-  document.getElementById('fileListBonus').innerHTML = `<div><span>${files[0].name}</span></div>`;
+  document.getElementById('fileListBonus').innerHTML = fileBadgeHtml(files[0].name);
   bonusDefRows = await readFile(files[0]);
   checkDefReady();
 });
@@ -593,13 +596,25 @@ function renderQuarterFilter(){
 }
 function renderPersonalTable(filter, quarterFilter){
   const t=document.getElementById('personalTable'); let rows=personalAll();
+  const allQuarters = sortQuarters(Array.from(new Set(masterRows.map(r=>r.年季))));
+  const latestQ = allQuarters[allQuarters.length-1];
+  const latestByIdKey = new Set(rows.filter(r=>r.年季===latestQ).map(r=>r.idKey));
   const qf = quarterFilter!==undefined ? quarterFilter : document.getElementById('quarterFilter').value;
   if(qf) rows = rows.filter(r=>r.年季===qf);
   if(filter){ const f=filter.toLowerCase(); rows=rows.filter(r=>(r.姓名+r.GP值+r.校區).toLowerCase().includes(f)); }
-  let html='<thead><tr><th>年季</th><th>姓名</th><th>GP值</th><th>月份明細</th><th>季合計</th><th>平均單月薪資</th></tr></thead><tbody>';
+  rows = rows.slice().sort((a,b)=>{
+    const aActive = latestByIdKey.has(a.idKey), bActive = latestByIdKey.has(b.idKey);
+    if(aActive !== bActive) return aActive ? -1 : 1;
+    return a.姓名.localeCompare(b.姓名) || a.年季.localeCompare(b.年季);
+  });
+  let html='<thead><tr><th>狀態</th><th>年季</th><th>姓名</th><th>GP值</th><th>月份明細</th><th>季合計</th><th>平均單月薪資</th></tr></thead><tbody>';
   rows.forEach(r=>{
     const detail=r.月份.map((m,i)=>`${m}月:${fmt(r.月金額[i])}`).join(' / ');
-    html+=`<tr><td>${r.年季}</td><td>${r.姓名}</td><td><span class="badge">${r.GP值}</span></td>
+    const isActive = latestByIdKey.has(r.idKey);
+    const statusBadge = isActive
+      ? `<span class="badge" style="background:var(--good-bg);color:var(--good-text);">在職</span>`
+      : `<span class="badge" style="background:var(--bad-bg);color:var(--bad-text);">離職</span>`;
+    html+=`<tr><td>${statusBadge}</td><td>${r.年季}</td><td>${r.姓名}</td><td><span class="badge">${r.GP值}</span></td>
       <td style="text-align:left;font-size:12px;color:var(--text2);">${detail}</td><td>${fmt(r.季合計)}</td><td>${fmt(r.平均單月薪資)}</td></tr>`;
   });
   t.innerHTML=html+'</tbody>';
@@ -618,10 +633,14 @@ function renderMatrix(){
     if(r.姓名.length > people[pk].姓名.length) people[pk].姓名 = r.姓名;
     people[pk].校區 = r.校區 || people[pk].校區;
   });
-  const peopleList = Object.values(people).sort((a,b)=>(a.校區+a.姓名).localeCompare(b.校區+b.姓名));
+  Object.values(people).forEach(p=>{ p.isActive = p.byQ[latestQ]!==undefined; });
+  const peopleList = Object.values(people).sort((a,b)=>{
+    if(a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+    return (a.校區+a.姓名).localeCompare(b.校區+b.姓名);
+  });
   let html = '<thead><tr><th>狀態</th><th>校區</th><th>姓名</th>'+keys.map(q=>`<th>${q}</th>`).join('')+'</tr></thead><tbody>';
   peopleList.forEach(p=>{
-    const isActive = p.byQ[latestQ]!==undefined;
+    const isActive = p.isActive;
     const statusBadge = isActive
       ? `<span class="badge" style="background:var(--good-bg);color:var(--good-text);">在職</span>`
       : `<span class="badge" style="background:var(--bad-bg);color:var(--bad-text);">離職</span>`;
