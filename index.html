@@ -434,9 +434,13 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
       'C':num(document.getElementById('lvC').value), 'D':num(document.getElementById('lvD').value), 'E':num(document.getElementById('lvE').value) };
 
     let missingDef = 0;
+    let gpSwapDetected = 0;
     const teacherRowsRaw = rosterRows.map(r=>{
       let G='', P='';
-      if(cG && cP){ G=String(r[cG]).trim(); P=String(r[cP]).trim(); }
+      if(cG && cP){
+        G=String(r[cG]).trim(); P=String(r[cP]).trim();
+        if(/^P\d+$/i.test(G) && /^G\d+$/i.test(P)){ const tmp=G; G=P; P=tmp; gpSwapDetected++; }
+      }
       else if(cGP){
         const gp = String(r[cGP]).trim();
         const m = gp.match(/^(G\d+)\s*(P\d+)$/i) || gp.match(/^(G\d+)[\s\-_,]*\s*(P\d+)$/i);
@@ -514,6 +518,7 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
     statusEl.textContent = (missingDef>0
       ? `已計算 ${quarterKey},共 ${teacherRows.length} 位GP老師,但有 ${missingDef} 人查不到GP定義(金額算為0)；`
       : `已計算 ${quarterKey},共 ${teacherRows.length} 位GP老師；`)
+      + (gpSwapDetected>0 ? `偵測到 ${gpSwapDetected} 筆G值/P值欄位填反,已自動校正,` : '')
       + (hourlyIncluded.length>0 ? `另有 ${hourlyIncluded.length} 位時薪/兼職人員已用手動填的月金額計入總支出,` : '')
       + (hourlyExcluded.length>0 ? `已排除 ${hourlyExcluded.length} 位時薪/兼職人員(${hourlyExcluded.map(t=>t.nameEn||t.nameCn||t.nameGeneric).join('、')},未填月金額),這些人請直接把實際薪資加進主資料庫,` : '')
       + (extraApplied>0 ? `已套用 ${extraApplied} 筆額外加給,` : '')
