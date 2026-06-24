@@ -597,18 +597,23 @@ function personalAll(){
   const groups={};
   masterRows.forEach(r=>{
     const idKey = canonicalId(r);
+    if(!idKey) return; // skip rows with no usable name at all
     const key=idKey+'|'+r.年季;
     if(!groups[key]) groups[key]={年季:r.年季,idKey,校區:r.校區,months:{},lastGrade:'',lastPct:'',lastMonth:0};
     groups[key].months[r.月]=(groups[key].months[r.月]||0)+r.總計;
     if(r.月>=groups[key].lastMonth){groups[key].lastMonth=r.月; groups[key].lastGrade=r.Grade; groups[key].lastPct=r.Percentile; groups[key].校區=r.校區;}
   });
-  return Object.values(groups).map(g=>{
+  return Object.values(groups)
+    .filter(g=>g.idKey && g.idKey.trim())
+    .map(g=>{
     const monthsInQ=Object.keys(g.months).map(Number).sort((a,b)=>a-b);
     const vals=monthsInQ.map(m=>g.months[m]); const total=vals.reduce((a,b)=>a+b,0);
     const info = nameInfo[g.idKey] || {英文名:g.idKey,中文名:''};
-    return {年季:g.年季,校區:g.校區,姓名:(info.英文名+' '+info.中文名).trim(),idKey:g.idKey,英文名:info.英文名,中文名:info.中文名,
+    const en = info.英文名 || '', cn = info.中文名 || '';
+    return {年季:g.年季,校區:g.校區||'',姓名:(en+' '+cn).trim(),idKey:g.idKey,英文名:en,中文名:cn,
       GP值:g.lastGrade+g.lastPct, 月份:monthsInQ, 月金額:vals, 季合計:total, 平均單月薪資:total/(vals.length||1)};
-  }).sort((a,b)=>a.姓名.localeCompare(b.姓名)||a.年季.localeCompare(b.年季));
+  }).filter(p=>p.姓名 && p.姓名.trim())
+  .sort((a,b)=>a.姓名.localeCompare(b.姓名)||a.年季.localeCompare(b.年季));
 }
 function renderAll(){
   const hasData = masterRows.length>0;
