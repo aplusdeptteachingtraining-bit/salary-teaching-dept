@@ -227,20 +227,33 @@ function findCol(headers, candidates){
   }
   return null;
 }
-async function readFile(file){
+async function readFile(file, keywords){
   const buf = await file.arrayBuffer();
   let wb;
   if(file.name.toLowerCase().endsWith('.csv')){
     const text = new TextDecoder('utf-8').decode(buf);
     wb = XLSX.read(text, {type:'string'});
   } else { wb = XLSX.read(buf, {type:'array'}); }
-  let rows = [];
-  wb.SheetNames.forEach(sn => {
-    const sheetName = sn;
+
+  const candidates = wb.SheetNames.map(sn => {
     const json = XLSX.utils.sheet_to_json(wb.Sheets[sn], {defval:''});
-    if(json.length) rows = rows.concat(json);
-  });
-  return rows;
+    return {sn, json};
+  }).filter(c => c.json.length > 0);
+
+  if(candidates.length === 0) return [];
+  if(candidates.length === 1) return candidates[0].json;
+
+  if(keywords && keywords.length){
+    let best = null, bestScore = -1;
+    candidates.forEach(c => {
+      const headers = Object.keys(c.json[0]).map(h => String(h));
+      const score = keywords.reduce((acc, kw) => acc + (headers.some(h => h.includes(kw)) ? 1 : 0), 0);
+      if(score > bestScore){ bestScore = score; best = c; }
+    });
+    if(best && bestScore > 0) return best.json;
+  }
+  // fallback: sheet with the most data rows
+  return candidates.reduce((a,b) => a.json.length >= b.json.length ? a : b).json;
 }
 function fmt(n){ if(n===null||n===undefined||isNaN(n)) return '-'; return Math.round(n).toLocaleString(); }
 function fmtPct(n){ if(n===null||n===undefined) return '-'; const p=(n*100).toFixed(1); return (n>=0?'+':'')+p+'%'; }
@@ -275,7 +288,7 @@ setupDrop('dropzoneMaster','fileMaster', async files=>{
   errBox.innerHTML='';
   document.getElementById('fileListMaster').innerHTML = fileBadgeHtml(files[0].name);
   try{
-    const allRows = await readFile(files[0]);
+    const allRows = await readFile(files[0], ['年','月','英文名','中文名','總計','基礎薪資']);
     if(allRows.length===0) throw new Error('檔案沒有讀到任何資料列');
     const headers = Object.keys(allRows[0]);
     const cYear=findCol(headers,['年份','年']), cMonth=findCol(headers,['月份','月']),
@@ -382,19 +395,19 @@ function getExtraPayments(){
 setupDrop('dropzoneRoster','fileRoster', async files=>{
   if(!files[0]) return;
   document.getElementById('fileListRoster').innerHTML = fileBadgeHtml(files[0].name);
-  rosterRows = await readFile(files[0]);
+  rosterRows = await readFile(files[0], ['校區','英文名','中文名','姓名','G值','P值','GP']);
   checkDefReady();
 });
 setupDrop('dropzoneGP','fileGP', async files=>{
   if(!files[0]) return;
   document.getElementById('fileListGP').innerHTML = fileBadgeHtml(files[0].name);
-  gpDefRows = await readFile(files[0]);
+  gpDefRows = await readFile(files[0], ['Grade','Percentile','平均單月金額','G值','P值']);
   checkDefReady();
 });
 setupDrop('dropzoneBonus','fileBonus', async files=>{
   if(!files[0]) return;
   document.getElementById('fileListBonus').innerHTML = fileBadgeHtml(files[0].name);
-  bonusDefRows = await readFile(files[0]);
+  bonusDefRows = await readFile(files[0], ['Grade','Percentile','紅利','總額','G值','P值']);
   checkDefReady();
 });
 
