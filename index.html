@@ -333,8 +333,11 @@ document.getElementById('clearMasterBtn').addEventListener('click', ()=>{
 });
 
 document.getElementById('downloadMasterBtn').addEventListener('click', ()=>{
+  const sortedRows = masterRows.slice().sort((a,b)=>
+    a.年-b.年 || a.月-b.月 || (a.校區||'').localeCompare(b.校區||'') ||
+    (a.英文名||'').localeCompare(b.英文名||'') || (a.中文名||'').localeCompare(b.中文名||''));
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(masterRows.map(r=>({年:r.年,月:r.月,年季:r.年季,季:r.季,校區:r.校區,英文名:r.英文名,中文名:r.中文名,
+  const ws = XLSX.utils.json_to_sheet(sortedRows.map(r=>({年:r.年,月:r.月,年季:r.年季,季:r.季,校區:r.校區,英文名:r.英文名,中文名:r.中文名,
     Grade:r.Grade,Percentile:r.Percentile,基礎薪資:Math.round(r.基礎薪資),紅利獎金:Math.round(r.紅利獎金),其他加給:Math.round(r.其他加給||0),總計:Math.round(r.總計),資料來源:r.資料來源})));
   XLSX.utils.book_append_sheet(wb, ws, '原始資料');
   XLSX.writeFile(wb, '主資料庫_更新版.xlsx');
@@ -791,23 +794,34 @@ document.getElementById('printPdfBtn').addEventListener('click', async ()=>{
   const btn = document.getElementById('printPdfBtn');
   const originalText = btn.textContent;
   btn.textContent = '產生中...'; btn.disabled = true;
+  const wrapper = document.createElement('div');
+  wrapper.style.position='fixed'; wrapper.style.left='-99999px'; wrapper.style.top='0';
+  wrapper.style.background='#ffffff'; wrapper.style.padding='24px';
+  wrapper.style.fontFamily = getComputedStyle(document.body).fontFamily;
+  wrapper.style.width = (tableEl.scrollWidth + 48) + 'px';
+  const titleEl = document.createElement('div');
+  titleEl.textContent = titleMap[tabName] || '薪資報表';
+  titleEl.style.fontSize='20px'; titleEl.style.fontWeight='600'; titleEl.style.marginBottom='4px'; titleEl.style.color='#1f1f1d';
+  const dateEl = document.createElement('div');
+  dateEl.textContent = new Date().toLocaleString('zh-TW');
+  dateEl.style.fontSize='12px'; dateEl.style.color='#5f5e5a'; dateEl.style.marginBottom='14px';
+  const tableClone = tableEl.cloneNode(true);
+  wrapper.appendChild(titleEl); wrapper.appendChild(dateEl); wrapper.appendChild(tableClone);
+  document.body.appendChild(wrapper);
   try{
-    const canvas = await html2canvas(tableEl, {scale:2, backgroundColor:'#ffffff'});
+    const canvas = await html2canvas(wrapper, {scale:2, backgroundColor:'#ffffff'});
     const imgData = canvas.toDataURL('image/png');
     const { jsPDF } = window.jspdf;
     const pxToPt = 0.75;
     const imgWpt = canvas.width * pxToPt / 2, imgHpt = canvas.height * pxToPt / 2;
-    const pageWpt = imgWpt + 60;
-    const doc = new jsPDF({orientation: imgWpt > imgHpt ? 'landscape':'portrait', unit:'pt', format:[pageWpt, imgHpt+90]});
-    doc.setFontSize(16);
-    doc.text(titleMap[tabName]||'薪資報表', 30, 35);
-    doc.setFontSize(9);
-    doc.text(new Date().toLocaleString('zh-TW'), 30, 52);
-    doc.addImage(imgData, 'PNG', 30, 65, imgWpt, imgHpt);
+    const margin = 20;
+    const doc = new jsPDF({orientation: imgWpt > imgHpt ? 'landscape':'portrait', unit:'pt', format:[imgWpt+margin*2, imgHpt+margin*2]});
+    doc.addImage(imgData, 'PNG', margin, margin, imgWpt, imgHpt);
     doc.save(`${titleMap[tabName]||'薪資報表'}_${new Date().toISOString().slice(0,10)}.pdf`);
   } catch(e){
     alert('產生PDF時發生錯誤：'+e.message);
   }
+  wrapper.remove();
   btn.textContent = originalText; btn.disabled = false;
 });
 
