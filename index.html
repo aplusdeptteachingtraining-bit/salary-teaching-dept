@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <title>部門薪資彙整工具</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root{
     --bg:#ffffff; --bg2:#f5f4f0; --bg3:#ececea;
@@ -716,7 +718,35 @@ document.querySelectorAll('[data-tab]').forEach(tab=>{
 });
 document.getElementById('searchBox').addEventListener('input', e=>renderPersonalTable(e.target.value, undefined));
 document.getElementById('quarterFilter').addEventListener('change', e=>renderPersonalTable(document.getElementById('searchBox').value, e.target.value));
-document.getElementById('printPdfBtn').addEventListener('click', ()=>window.print());
+document.getElementById('printPdfBtn').addEventListener('click', async ()=>{
+  const activeTab = document.querySelector('.tabs .tab.active');
+  const tabName = activeTab ? activeTab.dataset.tab : 'dept';
+  const tableMap = {dept:'deptTable', personal:'personalTable', matrix:'matrixTable', range:'rangeTable'};
+  const titleMap = {dept:'部門季度彙總', personal:'個人GP明細', matrix:'個人平均單月薪資總覽', range:'GP區間分布'};
+  const tableId = tableMap[tabName] || 'deptTable';
+  const tableEl = document.getElementById(tableId);
+  const btn = document.getElementById('printPdfBtn');
+  const originalText = btn.textContent;
+  btn.textContent = '產生中...'; btn.disabled = true;
+  try{
+    const canvas = await html2canvas(tableEl, {scale:2, backgroundColor:'#ffffff'});
+    const imgData = canvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    const pxToPt = 0.75;
+    const imgWpt = canvas.width * pxToPt / 2, imgHpt = canvas.height * pxToPt / 2;
+    const pageWpt = imgWpt + 60;
+    const doc = new jsPDF({orientation: imgWpt > imgHpt ? 'landscape':'portrait', unit:'pt', format:[pageWpt, imgHpt+90]});
+    doc.setFontSize(16);
+    doc.text(titleMap[tabName]||'薪資報表', 30, 35);
+    doc.setFontSize(9);
+    doc.text(new Date().toLocaleString('zh-TW'), 30, 52);
+    doc.addImage(imgData, 'PNG', 30, 65, imgWpt, imgHpt);
+    doc.save(`${titleMap[tabName]||'薪資報表'}_${new Date().toISOString().slice(0,10)}.pdf`);
+  } catch(e){
+    alert('產生PDF時發生錯誤：'+e.message);
+  }
+  btn.textContent = originalText; btn.disabled = false;
+});
 
 updateMasterStatus();
 </script>
