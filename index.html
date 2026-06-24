@@ -108,7 +108,7 @@
 
   <div class="card">
     <h2><span class="step-num">2</span>上傳GP名冊</h2>
-    <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">欄位需包含：校區、老師中文名/英文名、GP(可以是合併的「GP」欄如"G2P80",或分開的「G值」「P值」兩欄都可)、英語加給(可為"-")</p>
+    <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">欄位需包含：校區、老師中文名/英文名、GP(可以是合併的「GP」欄如"G2P80",或分開的「G值」「P值」兩欄都可)、英語加給(可為"-")。<br>若有人是季中加入/離開,可加選填欄位「起始月份」「結束月份」(填數字,例如5代表5月),沒填就預設整季3個月都算。<br>時薪/兼職人員(G值不是標準「G+數字」格式,例如填「PT」)預設會被排除,但如果加填「大月金額」「小月1金額」「小月2金額」這3個選填欄位(依季度月份順序,填實際時薪總額),系統會直接採用這些金額計入總支出,不套GP公式</p>
     <div class="drop" id="dropzoneRoster">
       <input type="file" id="fileRoster" accept=".xlsx,.xls,.csv">
       <p><i class="ti ti-upload"></i> 點擊或拖曳GP名冊到這裡</p>
@@ -412,6 +412,9 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
     const cP=findCol(rh,['P值','Percentile']), cG=findCol(rh,['G值','Grade']);
     const cGP=findCol(rh,['GP']);
     const cLevel=findCol(rh,['英語','加給','Level']);
+    const cStartMonth=findCol(rh,['起始月份','起始月','入職月']);
+    const cEndMonth=findCol(rh,['結束月份','結束月','離職月']);
+    const cHourly1=findCol(rh,['大月金額']), cHourly2=findCol(rh,['小月1金額']), cHourly3=findCol(rh,['小月2金額']);
     if(!cNameEn && !cNameCn && !cNameGeneric) throw new Error('GP名冊找不到姓名欄位(中文名/英文名/姓名)');
     if(!cP && !cG && !cGP) throw new Error('GP名冊找不到GP欄位(G值+P值,或合併的GP欄)');
 
@@ -431,7 +434,7 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
       'C':num(document.getElementById('lvC').value), 'D':num(document.getElementById('lvD').value), 'E':num(document.getElementById('lvE').value) };
 
     let missingDef = 0;
-    const teacherRows = rosterRows.map(r=>{
+    const teacherRowsRaw = rosterRows.map(r=>{
       let G='', P='';
       if(cG && cP){ G=String(r[cG]).trim(); P=String(r[cP]).trim(); }
       else if(cGP){
@@ -439,6 +442,18 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
         const m = gp.match(/^(G\d+)\s*(P\d+)$/i) || gp.match(/^(G\d+)[\s\-_,]*\s*(P\d+)$/i);
         if(m){ G=m[1].toUpperCase(); P=m[2].toUpperCase(); } else { G=gp; P=''; }
       }
+      const nameEn = cNameEn ? String(r[cNameEn]).trim() : '';
+      const nameCn = cNameCn ? String(r[cNameCn]).trim() : '';
+      const nameGeneric = cNameGeneric ? String(r[cNameGeneric]).trim() : '';
+      const isStandardGrade = /^G\d+$/i.test(G);
+      const hourlyAmts = [cHourly1, cHourly2, cHourly3].map(c => c && String(r[c]).trim() ? num(r[c]) : null);
+      const hasHourlyAmts = hourlyAmts.every(v => v!==null);
+      return { raw:r, G, P, nameEn, nameCn, nameGeneric, isStandardGrade, hourlyAmts, hasHourlyAmts };
+    });
+
+    const hourlyExcluded = teacherRowsRaw.filter(t=>!t.isStandardGrade && !t.hasHourlyAmts);
+    const hourlyIncluded = teacherRowsRaw.filter(t=>!t.isStandardGrade && t.hasHourlyAmts);
+    const teacherRows = teacherRowsRaw.filter(t=>t.isStandardGrade).map(({raw:r, G, P, nameEn, nameCn, nameGeneric})=>{
       const baseKey = G+'|P20';
       const bonusKey = G+'|'+P;
       const base = gpMap[baseKey]; const bonus = bonusMap[bonusKey];
@@ -448,24 +463,27 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
       const levelAmt = lm ? (levelMap[lm[1].toUpperCase()]||0) : 0;
       const baseAmt = (base||0) + levelAmt;
       const bonusAmt = bonus||0;
-      const nameEn = cNameEn ? String(r[cNameEn]).trim() : '';
-      const nameCn = cNameCn ? String(r[cNameCn]).trim() : '';
-      const nameGeneric = cNameGeneric ? String(r[cNameGeneric]).trim() : '';
+      const startM = cStartMonth && String(r[cStartMonth]).trim() ? parseInt(String(r[cStartMonth]).replace(/[^0-9]/g,'')) : monthsInQ[0];
+      const endM = cEndMonth && String(r[cEndMonth]).trim() ? parseInt(String(r[cEndMonth]).replace(/[^0-9]/g,'')) : monthsInQ[monthsInQ.length-1];
       return {
         校區: cCampus?String(r[cCampus]).trim():'', 英文名: nameEn||nameGeneric, 中文名: nameCn,
-        Grade:G, Percentile:P, 基礎薪資定義: baseAmt, 紅利定義: bonusAmt, 英語Level: levelRaw||'-'
+        Grade:G, Percentile:P, 基礎薪資定義: baseAmt, 紅利定義: bonusAmt, 英語Level: levelRaw||'-',
+        起始月: startM, 結束月: endM
       };
     });
 
     // expand into 3 monthly rows per teacher (raw-data compatible)
     const extraPayments = getExtraPayments();
+    const bigMonths = [1,4,7,10];
     let rows = [];
     let extraApplied = 0;
+    let skippedMonths = 0;
     teacherRows.forEach(t=>{
       const fullName = (t.英文名+' '+t.中文名).trim();
       const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,'');
-      monthsInQ.forEach((m, idx)=>{
-        const isBig = idx===0;
+      monthsInQ.forEach((m)=>{
+        if(m < t.起始月 || m > t.結束月){ skippedMonths++; return; }
+        const isBig = bigMonths.includes(m);
         const matched = extraPayments.filter(e =>
           e.month===m && (norm(e.name)===norm(fullName) || norm(e.name)===norm(t.英文名) || norm(e.name)===norm(t.中文名)));
         const extraAmt = matched.reduce((a,e)=>a+e.amt,0);
@@ -479,12 +497,27 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
         });
       });
     });
-    computedQuarterRows = {quarterKey, rows, teacherCount: teacherRows.length};
+    hourlyIncluded.forEach(t=>{
+      const cCampusVal = cCampus ? String(t.raw[cCampus]).trim() : '';
+      monthsInQ.forEach((m, idx)=>{
+        rows.push({
+          年:year, 月:m, 年季:quarterKey, 季:qn,
+          校區:cCampusVal, 英文名:t.nameEn||t.nameGeneric, 中文名:t.nameCn, Grade:t.G||'PT', Percentile:t.P||'',
+          基礎薪資: t.hourlyAmts[idx], 紅利獎金: 0, 其他加給: 0,
+          總計: t.hourlyAmts[idx],
+          資料來源: 'GP名冊試算(時薪/兼職-手動金額)'
+        });
+      });
+    });
+    computedQuarterRows = {quarterKey, rows, teacherCount: teacherRows.length + hourlyIncluded.length};
     document.getElementById('appendBtn').disabled = false;
     statusEl.textContent = (missingDef>0
-      ? `已計算 ${quarterKey},共 ${teacherRows.length} 位老師,但有 ${missingDef} 人查不到GP定義(金額算為0)；`
-      : `已計算 ${quarterKey},共 ${teacherRows.length} 位老師；`)
+      ? `已計算 ${quarterKey},共 ${teacherRows.length} 位GP老師,但有 ${missingDef} 人查不到GP定義(金額算為0)；`
+      : `已計算 ${quarterKey},共 ${teacherRows.length} 位GP老師；`)
+      + (hourlyIncluded.length>0 ? `另有 ${hourlyIncluded.length} 位時薪/兼職人員已用手動填的月金額計入總支出,` : '')
+      + (hourlyExcluded.length>0 ? `已排除 ${hourlyExcluded.length} 位時薪/兼職人員(${hourlyExcluded.map(t=>t.nameEn||t.nameCn||t.nameGeneric).join('、')},未填月金額),這些人請直接把實際薪資加進主資料庫,` : '')
       + (extraApplied>0 ? `已套用 ${extraApplied} 筆額外加給,` : '')
+      + (skippedMonths>0 ? `有 ${skippedMonths} 個月份因季中加入/離職而不計算,` : '')
       + `可以按「加入主資料庫」`;
   }catch(e){ errBox.innerHTML = `<div class="err">${e.message}</div>`; }
 });
