@@ -169,10 +169,14 @@
   </div>
 
   <div class="card" id="resultCard" style="display:none;">
+    <div class="row" style="margin:0 0 14px;">
+      <button id="printPdfBtn">下載 / 列印 PDF</button>
+    </div>
     <div class="tabs">
       <div class="tab active" data-tab="dept">部門季度彙總</div>
       <div class="tab" data-tab="personal">個人GP明細(月1/2/3)</div>
       <div class="tab" data-tab="matrix">個人平均單月薪資總覽</div>
+      <div class="tab" data-tab="range">GP區間分布</div>
     </div>
     <div id="tab-dept">
       <div class="stat-grid" id="deptStats"></div>
@@ -189,9 +193,23 @@
       <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">每位老師橫向比較各季度的平均單月薪資</p>
       <div class="scroll"><table id="matrixTable"></table></div>
     </div>
+    <div id="tab-range" style="display:none;">
+      <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">依Grade區間(G1-G2 / G3-G5 / G6以上)統計人數與總金額,並比較上一季</p>
+      <div class="scroll"><table id="rangeTable"></table></div>
+    </div>
   </div>
   <div class="empty" id="emptyState">主資料庫目前沒有資料 — 完成上面步驟並按「加入主資料庫」後就會顯示彙總結果</div>
 </div>
+
+<style>
+@media print{
+  body{background:#fff;}
+  .card:not(#resultCard) , h1, .sub, #printPdfBtn{ display:none !important; }
+  .tabs .tab{ display:none !important; }
+  #tab-dept, #tab-personal, #tab-matrix, #tab-range{ display:block !important; }
+  .scroll{ max-height:none !important; overflow:visible !important; }
+}
+</style>
 
 <script>
 /* ---------- shared helpers ---------- */
@@ -224,7 +242,7 @@ async function readFile(file){
 }
 function fmt(n){ if(n===null||n===undefined||isNaN(n)) return '-'; return Math.round(n).toLocaleString(); }
 function fmtPct(n){ if(n===null||n===undefined) return '-'; const p=(n*100).toFixed(1); return (n>=0?'+':'')+p+'%'; }
-function pctClass(n){ if(n===null||n===undefined) return ''; return n>=0 ? 'pos' : 'neg'; }
+function pctClass(n){ if(n===null||n===undefined) return ''; return n>=0 ? 'neg' : 'pos'; }
 function quarterMinus1(q){ const y=parseInt(q.slice(0,4)), qn=parseInt(q.slice(5)); return qn===1?`${y-1}Q4`:`${y}Q${qn-1}`; }
 function quarterYearAgo(q){ const y=parseInt(q.slice(0,4)), qn=parseInt(q.slice(5)); return `${y-1}Q${qn}`; }
 function sortQuarters(arr){
@@ -440,9 +458,11 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
     let extraApplied = 0;
     teacherRows.forEach(t=>{
       const fullName = (t.英文名+' '+t.中文名).trim();
+      const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,'');
       monthsInQ.forEach((m, idx)=>{
         const isBig = idx===0;
-        const matched = extraPayments.filter(e => e.month===m && (fullName.includes(e.name) || e.name.includes(t.英文名) || e.name.includes(t.中文名)));
+        const matched = extraPayments.filter(e =>
+          e.month===m && (norm(e.name)===norm(fullName) || norm(e.name)===norm(t.英文名) || norm(e.name)===norm(t.中文名)));
         const extraAmt = matched.reduce((a,e)=>a+e.amt,0);
         if(matched.length) extraApplied += matched.length;
         rows.push({
@@ -483,16 +503,21 @@ document.getElementById('appendBtn').addEventListener('click', ()=>{
 
 /* ---------- aggregation + rendering (driven by masterRows) ---------- */
 function deptSeries(){
-  const byQ={}, countByQ={};
+  const byQ={}, countByQ={}, gByQ={}, pByQ={}, extraByQ={};
   masterRows.forEach(r=>{
     byQ[r.年季]=(byQ[r.年季]||0)+r.總計;
+    gByQ[r.年季]=(gByQ[r.年季]||0)+(r.基礎薪資||0);
+    pByQ[r.年季]=(pByQ[r.年季]||0)+(r.紅利獎金||0);
+    extraByQ[r.年季]=(extraByQ[r.年季]||0)+(r.其他加給||0);
     if(!countByQ[r.年季]) countByQ[r.年季] = new Set();
     countByQ[r.年季].add((r.中文名||'').trim() || (r.英文名||'').trim());
   });
   const quarters = sortQuarters(Object.keys(byQ));
   return quarters.map(q=>{
     const total=byQ[q], prev=byQ[quarterMinus1(q)], ya=byQ[quarterYearAgo(q)];
-    return {年季:q, 教師人數: countByQ[q].size, 薪資總量:total, 上一季: prev!==undefined?prev:null, 季增減: (prev!==undefined&&prev!==0)?(total-prev)/prev:null,
+    return {年季:q, 教師人數: countByQ[q].size, 薪資總量:total, 平均單月總支出: total/3,
+      G總支出: gByQ[q]||0, P總支出: pByQ[q]||0, 額外加給總支出: extraByQ[q]||0,
+      上一季: prev!==undefined?prev:null, 季增減: (prev!==undefined&&prev!==0)?(total-prev)/prev:null,
       去年同期: ya!==undefined?ya:null, 年增減: (ya!==undefined&&ya!==0)?(total-ya)/ya:null};
   });
 }
@@ -548,13 +573,15 @@ function renderDeptStats(){
   el.innerHTML=`<div class="stat"><div class="l">最新季度</div><div class="v">${latest.年季}</div></div>
     <div class="stat"><div class="l">教師人數</div><div class="v">${latest.教師人數}</div></div>
     <div class="stat"><div class="l">薪資總量</div><div class="v">${fmt(latest.薪資總量)}</div></div>
+    <div class="stat"><div class="l">平均單月總支出</div><div class="v">${fmt(latest.平均單月總支出)}</div></div>
     <div class="stat"><div class="l">季增減%</div><div class="v ${pctClass(latest.季增減)}">${fmtPct(latest.季增減)}</div></div>
     <div class="stat"><div class="l">年增減%</div><div class="v ${pctClass(latest.年增減)}">${fmtPct(latest.年增減)}</div></div>`;
 }
 function renderDeptTable(){
-  const t=document.getElementById('deptTable'); const series=deptSeries();
-  let html='<thead><tr><th>年季</th><th>教師人數</th><th>薪資總量</th><th>上一季金額</th><th>季增減%</th><th>去年同期金額</th><th>年增減%</th></tr></thead><tbody>';
-  series.forEach(r=>{html+=`<tr><td>${r.年季}</td><td>${r.教師人數}</td><td>${fmt(r.薪資總量)}</td><td>${fmt(r.上一季)}</td>
+  const t=document.getElementById('deptTable'); const series=deptSeries().slice().reverse();
+  let html='<thead><tr><th>年季</th><th>教師人數</th><th>薪資總量</th><th>平均單月總支出</th><th>G總支出</th><th>P總支出</th><th>額外加給總支出</th><th>上一季金額</th><th>季增減%</th><th>去年同期金額</th><th>年增減%</th></tr></thead><tbody>';
+  series.forEach(r=>{html+=`<tr><td>${r.年季}</td><td>${r.教師人數}</td><td>${fmt(r.薪資總量)}</td><td>${fmt(r.平均單月總支出)}</td>
+    <td>${fmt(r.G總支出)}</td><td>${fmt(r.P總支出)}</td><td>${fmt(r.額外加給總支出)}</td><td>${fmt(r.上一季)}</td>
     <td class="${pctClass(r.季增減)}">${fmtPct(r.季增減)}</td><td>${fmt(r.去年同期)}</td><td class="${pctClass(r.年增減)}">${fmtPct(r.年增減)}</td></tr>`;});
   t.innerHTML=html+'</tbody>';
 }
@@ -580,6 +607,7 @@ function renderPersonalTable(filter, quarterFilter){
 function renderMatrix(){
   const t=document.getElementById('matrixTable');
   const keys = sortQuarters(Array.from(new Set(masterRows.map(r=>r.年季))));
+  const latestQ = keys[keys.length-1];
   const allRows = personalAll();
   const people = {};
   allRows.forEach(r=>{
@@ -591,9 +619,68 @@ function renderMatrix(){
     people[pk].校區 = r.校區 || people[pk].校區;
   });
   const peopleList = Object.values(people).sort((a,b)=>(a.校區+a.姓名).localeCompare(b.校區+b.姓名));
-  let html = '<thead><tr><th>校區</th><th>姓名</th>'+keys.map(q=>`<th>${q}</th>`).join('')+'</tr></thead><tbody>';
+  let html = '<thead><tr><th>狀態</th><th>校區</th><th>姓名</th>'+keys.map(q=>`<th>${q}</th>`).join('')+'</tr></thead><tbody>';
   peopleList.forEach(p=>{
-    html += `<tr><td>${p.校區}</td><td>${p.姓名}</td>`+keys.map(q=>`<td>${p.byQ[q]!==undefined?fmt(p.byQ[q]):'-'}</td>`).join('')+'</tr>';
+    const isActive = p.byQ[latestQ]!==undefined;
+    const statusBadge = isActive
+      ? `<span class="badge" style="background:var(--good-bg);color:var(--good-text);">在職</span>`
+      : `<span class="badge" style="background:var(--bad-bg);color:var(--bad-text);">離職</span>`;
+    html += `<tr><td>${statusBadge}</td><td>${p.校區}</td><td>${p.姓名}</td>`+keys.map(q=>`<td>${p.byQ[q]!==undefined?fmt(p.byQ[q]):'-'}</td>`).join('')+'</tr>';
+  });
+  t.innerHTML = html+'</tbody>';
+}
+function gradeBucket(g){
+  const m = String(g||'').match(/^G(\d+)/i);
+  if(!m) return '其他(無法分級)';
+  const n = parseInt(m[1]);
+  if(n>=1 && n<=2) return 'G1-G2';
+  if(n>=3 && n<=5) return 'G3-G5';
+  if(n>=6) return 'G6以上';
+  return '其他(無法分級)';
+}
+function rangeSeries(){
+  const enToCn = {};
+  masterRows.forEach(r=>{ const en=(r.英文名||'').trim(), cn=(r.中文名||'').trim(); if(en&&cn) enToCn[en]=cn; });
+  function canonicalId(r){ const en=(r.英文名||'').trim(), cn=(r.中文名||'').trim(); return cn || enToCn[en] || en; }
+  const buckets = ['G1-G2','G3-G5','G6以上','其他(無法分級)'];
+  const data = {};
+  masterRows.forEach(r=>{
+    const bucket = gradeBucket(r.Grade);
+    if(!data[r.年季]) data[r.年季] = {};
+    if(!data[r.年季][bucket]) data[r.年季][bucket] = {amount:0, people:new Set()};
+    data[r.年季][bucket].amount += r.總計;
+    data[r.年季][bucket].people.add(canonicalId(r));
+  });
+  const quarters = sortQuarters(Object.keys(data));
+  const rows = quarters.map(q=>{
+    const row = {年季:q};
+    buckets.forEach(b=>{
+      const d = data[q][b];
+      row[b] = {amount: d?d.amount:0, count: d?d.people.size:0};
+    });
+    return row;
+  });
+  rows.forEach((row,i)=>{
+    buckets.forEach(b=>{
+      const prevAmount = i>0 ? rows[i-1][b].amount : null;
+      row[b].diffPct = (prevAmount!==null && prevAmount!==0) ? (row[b].amount-prevAmount)/prevAmount : null;
+    });
+  });
+  return {rows, buckets};
+}
+function renderRangeTable(){
+  const t = document.getElementById('rangeTable');
+  const {rows, buckets} = rangeSeries();
+  let html = '<thead><tr><th>年季</th>';
+  buckets.forEach(b=>{ html += `<th>${b}<br>人數</th><th>${b}<br>總金額</th><th>${b}<br>季增減%</th>`; });
+  html += '</tr></thead><tbody>';
+  rows.slice().reverse().forEach(row=>{
+    html += `<tr><td>${row.年季}</td>`;
+    buckets.forEach(b=>{
+      const cell = row[b];
+      html += `<td>${cell.count}</td><td>${fmt(cell.amount)}</td><td class="${pctClass(cell.diffPct)}">${fmtPct(cell.diffPct)}</td>`;
+    });
+    html += '</tr>';
   });
   t.innerHTML = html+'</tbody>';
 }
@@ -603,11 +690,14 @@ document.querySelectorAll('[data-tab]').forEach(tab=>{
     document.getElementById('tab-dept').style.display = tab.dataset.tab==='dept'?'block':'none';
     document.getElementById('tab-personal').style.display = tab.dataset.tab==='personal'?'block':'none';
     document.getElementById('tab-matrix').style.display = tab.dataset.tab==='matrix'?'block':'none';
+    document.getElementById('tab-range').style.display = tab.dataset.tab==='range'?'block':'none';
     if(tab.dataset.tab==='matrix') renderMatrix();
+    if(tab.dataset.tab==='range') renderRangeTable();
   });
 });
 document.getElementById('searchBox').addEventListener('input', e=>renderPersonalTable(e.target.value, undefined));
 document.getElementById('quarterFilter').addEventListener('change', e=>renderPersonalTable(document.getElementById('searchBox').value, e.target.value));
+document.getElementById('printPdfBtn').addEventListener('click', ()=>window.print());
 
 updateMasterStatus();
 </script>
