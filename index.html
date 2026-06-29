@@ -108,7 +108,7 @@
 
   <div class="card">
     <h2><span class="step-num">2</span>上傳GP名冊</h2>
-    <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">欄位需包含：校區、老師中文名/英文名、GP(可以是合併的「GP」欄如"G2P80",或分開的「G值」「P值」兩欄都可)、英語加給(可為"-")。<br>若有人是季中加入/離開,可加選填欄位「起始月份」「結束月份」(填數字,例如5代表5月),沒填就預設整季3個月都算。<br>若有人有保底基礎薪資(例如新人/培訓期保底,跟GP定義表查出來的不一樣),可加選填欄位「保底基礎薪資」,填了就直接採用這個數字當基礎薪資,不查表(每人金額可不同)。<br>時薪/兼職人員(G值不是標準「G+數字」格式,例如填「PT」)預設會被排除,但如果加填「大月金額」「小月1金額」「小月2金額」這3個選填欄位(依季度月份順序,填實際時薪總額),系統會採用已填的月份金額計入總支出(沒填的月份就不計算,例如季中加入沒上到的那個月可以留空),不套GP公式</p>
+    <p style="font-size:12px;color:var(--text3);margin:0 0 10px;">欄位需包含：校區、老師中文名/英文名、GP(可以是合併的「GP」欄如"G2P80",或分開的「G值」「P值」兩欄都可)、英語加給(可為"-")。<br>若有人是季中加入/離開,可加選填欄位「起始月份」「結束月份」(填數字,例如5代表5月),沒填就預設整季3個月都算。<br>若有人有保底基礎薪資(例如新人/培訓期保底,跟GP定義表查出來的不一樣),可加選填欄位「保底基礎薪資」,填了就直接採用這個數字當基礎薪資,不查表(每人金額可不同)。<br>「大月金額」「小月1金額」「小月2金額」這3欄,**任何人都可以用**：依季度月份順序對應該月,只要某個月填了數字,系統就直接採用那個數字當那個月的總計(常用於到職/離職當月只工作部分天數、按比例調薪的情況),沒填的月份繼續照GP公式算;時薪/兼職人員(G值不是標準「G+數字」格式,例如填「PT」)若完全沒填這3欄會被自動排除</p>
     <div class="drop" id="dropzoneRoster">
       <input type="file" id="fileRoster" accept=".xlsx,.xls,.csv">
       <p><i class="ti ti-upload"></i> 點擊或拖曳GP名冊到這裡</p>
@@ -475,7 +475,7 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
     const hourlyExcluded = teacherRowsRaw.filter(t=>!t.isStandardGrade && !t.hasHourlyAmts);
     const hourlyIncluded = teacherRowsRaw.filter(t=>!t.isStandardGrade && t.hasHourlyAmts);
     let baseOverrideApplied = 0;
-    const teacherRows = teacherRowsRaw.filter(t=>t.isStandardGrade).map(({raw:r, G, P, nameEn, nameCn, nameGeneric})=>{
+    const teacherRows = teacherRowsRaw.filter(t=>t.isStandardGrade).map(({raw:r, G, P, nameEn, nameCn, nameGeneric, hourlyAmts})=>{
       const baseKey = G+'|P20';
       const bonusKey = G+'|'+P;
       const overrideVal = cBaseOverride && String(r[cBaseOverride]).trim() ? num(r[cBaseOverride]) : null;
@@ -493,6 +493,7 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
       return {
         校區: cCampus?String(r[cCampus]).trim():'', 英文名: nameEn||nameGeneric, 中文名: nameCn,
         Grade:G, Percentile:P, 基礎薪資定義: baseAmt, 紅利定義: bonusAmt, 英語Level: levelRaw||'-',
+        月覆蓋: hourlyAmts,
         起始月: startM, 結束月: endM
       };
     });
@@ -503,16 +504,29 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
     let rows = [];
     let extraApplied = 0;
     let skippedMonths = 0;
+    let monthOverrideApplied = 0;
     teacherRows.forEach(t=>{
       const fullName = (t.英文名+' '+t.中文名).trim();
       const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,'');
-      monthsInQ.forEach((m)=>{
+      monthsInQ.forEach((m, idx)=>{
         if(m < t.起始月 || m > t.結束月){ skippedMonths++; return; }
+        const overrideAmt = t.月覆蓋 ? t.月覆蓋[idx] : null;
         const isBig = bigMonths.includes(m);
         const matched = extraPayments.filter(e =>
           e.month===m && (norm(e.name)===norm(fullName) || norm(e.name)===norm(t.英文名) || norm(e.name)===norm(t.中文名)));
         const extraAmt = matched.reduce((a,e)=>a+e.amt,0);
         if(matched.length) extraApplied += matched.length;
+        if(overrideAmt!==null){
+          monthOverrideApplied++;
+          rows.push({
+            年:year, 月:m, 年季:quarterKey, 季:qn,
+            校區:t.校區, 英文名:t.英文名, 中文名:t.中文名, Grade:t.Grade, Percentile:t.Percentile,
+            基礎薪資: overrideAmt, 紅利獎金: 0, 其他加給: extraAmt,
+            總計: overrideAmt + extraAmt,
+            資料來源: 'GP名冊試算(單月手動覆蓋)'
+          });
+          return;
+        }
         rows.push({
           年:year, 月:m, 年季:quarterKey, 季:qn,
           校區:t.校區, 英文名:t.英文名, 中文名:t.中文名, Grade:t.Grade, Percentile:t.Percentile,
@@ -542,6 +556,7 @@ document.getElementById('computeBtn').addEventListener('click', ()=>{
       : `已計算 ${quarterKey},共 ${teacherRows.length} 位GP老師；`)
       + (gpSwapDetected>0 ? `偵測到 ${gpSwapDetected} 筆G值/P值欄位填反,已自動校正,` : '')
       + (baseOverrideApplied>0 ? `已套用 ${baseOverrideApplied} 筆保底基礎薪資,` : '')
+      + (monthOverrideApplied>0 ? `已套用 ${monthOverrideApplied} 筆單月手動金額覆蓋,` : '')
       + (hourlyIncluded.length>0 ? `另有 ${hourlyIncluded.length} 位時薪/兼職人員已用手動填的月金額計入總支出,` : '')
       + (hourlyExcluded.length>0 ? `已排除 ${hourlyExcluded.length} 位時薪/兼職人員(${hourlyExcluded.map(t=>t.nameEn||t.nameCn||t.nameGeneric).join('、')},未填月金額),這些人請直接把實際薪資加進主資料庫,` : '')
       + (extraApplied>0 ? `已套用 ${extraApplied} 筆額外加給,` : '')
